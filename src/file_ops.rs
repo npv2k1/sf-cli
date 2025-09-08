@@ -2,7 +2,7 @@
 
 use crate::{
     compression::{CompressionEngine, CompressionError},
-    crypto::{CryptoEngine, CryptoError},
+    crypto::{CryptoEngine, CryptoError, FileMetadata},
     models::{OperationParams, OperationResult, OperationType, TargetType},
     progress::ProgressTracker,
 };
@@ -88,27 +88,44 @@ impl FileOperator {
 
         let result = match params.operation {
             OperationType::Encrypt => {
-                self.encrypt_file(source, &destination, password, params).await
+                match self.encrypt_file(source, &destination, password, params).await {
+                    Ok(bytes_processed) => OperationResult::success(
+                        source.clone(),
+                        destination,
+                        bytes_processed,
+                        params.operation.clone(),
+                        params.compress,
+                    ),
+                    Err(e) => OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        e.to_string(),
+                    ),
+                }
             }
             OperationType::Decrypt => {
-                self.decrypt_file(source, &destination, password, params).await
+                match self.decrypt_file(source, &destination, password, params).await {
+                    Ok((bytes_processed, metadata, checksum_verified)) => {
+                        OperationResult::success_with_metadata(
+                            source.clone(),
+                            destination,
+                            bytes_processed,
+                            params.operation.clone(),
+                            metadata.compressed,
+                            Some(metadata.filename),
+                            Some(checksum_verified),
+                        )
+                    }
+                    Err(e) => OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        e.to_string(),
+                    ),
+                }
             }
         };
 
-        match result {
-            Ok(bytes_processed) => OperationResult::success(
-                source.clone(),
-                destination,
-                bytes_processed,
-                params.operation.clone(),
-                params.compress,
-            ),
-            Err(e) => OperationResult::failure(
-                source.clone(),
-                params.operation.clone(),
-                e.to_string(),
-            ),
-        }
+        result
     }
 
     /// Process a directory (compress to tar.gz then encrypt/decrypt)
@@ -169,69 +186,42 @@ impl FileOperator {
         };
 
         let mut input = BufReader::new(File::open(source)?);
-        let mut output = BufWriter::new(File::create(destination)?);
-
-        let mut buffer = vec![0u8; params.buffer_size];
-        let mut total_bytes = 0u64;
         let mut file_data = Vec::new();
 
-        // Read entire file into memory for small files, or process in chunks for large files
-        if file_size <= 1024 * 1024 * 100 { // 100MB threshold
-            input.read_to_end(&mut file_data)?;
-            
-            // Apply compression if requested
-            let data_to_encrypt = if params.compress {
-                progress.as_ref().map(|p| p.set_message("Compressing..."));
-                self.compression.compress(&file_data)?
-            } else {
-                file_data
-            };
+        // Read entire file
+        input.read_to_end(&mut file_data)?;
 
-            // Encrypt the data
-            progress.as_ref().map(|p| p.set_message("Encrypting..."));
-            let encrypted_data = self.crypto.encrypt(&data_to_encrypt, password)?;
-            
-            output.write_all(&encrypted_data)?;
-            total_bytes = encrypted_data.len() as u64;
-            
-            if let Some(progress) = &progress {
-                progress.inc(file_size);
-            }
+        // Apply compression if requested
+        let data_to_encrypt = if params.compress {
+            progress.as_ref().map(|p| p.set_message("Compressing..."));
+            self.compression.compress(&file_data)?
         } else {
-            // For large files, we need a streaming approach
-            // This is a simplified version - in practice, you'd want to implement
-            // authenticated encryption with associated data (AEAD) streaming
-            loop {
-                let bytes_read = input.read(&mut buffer)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                file_data.extend_from_slice(&buffer[..bytes_read]);
-                
-                if let Some(progress) = &progress {
-                    progress.inc(bytes_read as u64);
-                }
-            }
+            file_data.clone()
+        };
 
-            // Process the complete file data
-            let data_to_encrypt = if params.compress {
-                self.compression.compress(&file_data)?
-            } else {
-                file_data
-            };
+        // Create metadata
+        let metadata = FileMetadata::from_file(source, &file_data, params.compress);
 
-            let encrypted_data = self.crypto.encrypt(&data_to_encrypt, password)?;
-            output.write_all(&encrypted_data)?;
-            total_bytes = encrypted_data.len() as u64;
-        }
-
-        output.flush()?;
+        // Encrypt the data
+        progress.as_ref().map(|p| p.set_message("Encrypting..."));
+        let encrypted_data = self.crypto.encrypt(&data_to_encrypt, password, metadata)?;
         
+        // Write to destination
+        let mut output = BufWriter::new(File::create(destination)?);
+        output.write_all(&encrypted_data)?;
+        output.flush()?;
+
         if let Some(progress) = &progress {
+            progress.inc(file_size);
             progress.finish("Encryption complete");
         }
 
-        Ok(total_bytes)
+        // Delete source file if requested
+        if params.delete_source {
+            fs::remove_file(source)?;
+        }
+
+        Ok(encrypted_data.len() as u64)
     }
 
     /// Decrypt a single file
@@ -241,7 +231,7 @@ impl FileOperator {
         destination: &Path,
         password: &str,
         params: &OperationParams,
-    ) -> Result<u64, FileOperationError> {
+    ) -> Result<(u64, FileMetadata, bool), FileOperationError> {
         let file_size = fs::metadata(source)?.len();
         let progress = if params.show_progress {
             Some(ProgressTracker::new(file_size, "Decrypting"))
@@ -260,11 +250,28 @@ impl FileOperator {
             progress.set_message("Decrypting...");
         }
 
-        // Decrypt the data
-        let decrypted_data = self.crypto.decrypt(&encrypted_data, password)?;
+        // Try new format first, fall back to legacy if needed
+        let (decrypted_data, metadata) = match self.crypto.decrypt(&encrypted_data, password) {
+            Ok((data, meta)) => (data, Some(meta)),
+            Err(_) => {
+                // Try legacy format
+                let data = self.crypto.decrypt_legacy(&encrypted_data, password)?;
+                (data, None)
+            }
+        };
         
-        // Decompress if the file was compressed (detect by trying decompression)
-        let final_data = if params.compress {
+        // Decompress if needed
+        let final_data = if let Some(ref meta) = metadata {
+            if meta.compressed {
+                if let Some(progress) = &progress {
+                    progress.set_message("Decompressing...");
+                }
+                self.compression.decompress(&decrypted_data)?
+            } else {
+                decrypted_data
+            }
+        } else if params.compress {
+            // Legacy: try decompression based on params
             if let Some(progress) = &progress {
                 progress.set_message("Decompressing...");
             }
@@ -285,7 +292,28 @@ impl FileOperator {
             progress.finish("Decryption complete");
         }
 
-        Ok(final_data.len() as u64)
+        // Delete source file if requested
+        if params.delete_source {
+            fs::remove_file(source)?;
+        }
+
+        // Verify checksum if metadata is available and verification is enabled
+        let checksum_verified = if let Some(ref meta) = metadata {
+            if params.verify_checksum {
+                meta.verify_checksum(&final_data)
+            } else {
+                true // Skip verification if disabled
+            }
+        } else {
+            true // Legacy format, no checksum available
+        };
+
+        let result_metadata = metadata.unwrap_or_else(|| {
+            // Create placeholder metadata for legacy files
+            FileMetadata::new("unknown".to_string(), [0u8; 32], params.compress)
+        });
+
+        Ok((final_data.len() as u64, result_metadata, checksum_verified))
     }
 
     /// Encrypt a directory (tar.gz then encrypt)
@@ -306,9 +334,12 @@ impl FileOperator {
         progress.as_ref().map(|p| p.set_message("Creating archive..."));
         let archive_data = self.create_directory_archive(source)?;
         
+        // Create metadata for directory
+        let metadata = FileMetadata::from_file(source, &archive_data, true); // Always compressed for directories
+        
         // Encrypt the archive
         progress.as_ref().map(|p| p.set_message("Encrypting archive..."));
-        let encrypted_data = self.crypto.encrypt(&archive_data, password)?;
+        let encrypted_data = self.crypto.encrypt(&archive_data, password, metadata)?;
         
         // Write encrypted data to destination
         let mut output = BufWriter::new(File::create(destination)?);
@@ -343,7 +374,14 @@ impl FileOperator {
         input.read_to_end(&mut encrypted_data)?;
 
         progress.as_ref().map(|p| p.set_message("Decrypting..."));
-        let archive_data = self.crypto.decrypt(&encrypted_data, password)?;
+        let (archive_data, _metadata) = match self.crypto.decrypt(&encrypted_data, password) {
+            Ok((data, meta)) => (data, Some(meta)),
+            Err(_) => {
+                // Try legacy format
+                let data = self.crypto.decrypt_legacy(&encrypted_data, password)?;
+                (data, None)
+            }
+        };
 
         // Extract the archive
         progress.as_ref().map(|p| p.set_message("Extracting archive..."));
