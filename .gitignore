@@ -3,3 +3,13 @@
 *.db-*
 .env
 .DS_Store
+
+# Test files
+test.txt
+test.sf
+test
+large_test.txt
+large_test.sf.gz
+large_test
+test_dir.sf
+test_dir/
