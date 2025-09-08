@@ -1,49 +1,51 @@
 use clap::{Parser, Subcommand};
-use template_rust::{database::TodoDatabase, models::Todo, tui::App};
+use sf_cli::{
+    file_ops::FileOperator,
+    models::{OperationParams, OperationType, TargetType},
+    tui::App,
+};
+use std::path::PathBuf;
 
-/// A simple todo application with SQLite and TUI
+/// Secure file encryption CLI/TUI tool with password protection
 #[derive(Parser)]
-#[command(name = "todo")]
-#[command(about = "A terminal todo application")]
+#[command(name = "sf-cli")]
+#[command(about = "A secure file encryption tool with password protection")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-
-    /// Database file path
-    #[arg(short, long, default_value = "todo.db")]
-    database: String,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Start the interactive TUI
     Tui,
-    /// List all todos
-    List {
-        /// Show only completed todos
+    /// Encrypt a file or directory
+    Encrypt {
+        /// File or directory path to encrypt
+        path: PathBuf,
+        /// Output path (optional)
         #[arg(short, long)]
-        completed: bool,
-        /// Show only pending todos
+        output: Option<PathBuf>,
+        /// Enable compression
         #[arg(short, long)]
-        pending: bool,
-    },
-    /// Add a new todo
-    Add {
-        /// Todo title
-        title: String,
-        /// Optional description
+        compress: bool,
+        /// Password (will prompt if not provided)
         #[arg(short, long)]
-        description: Option<String>,
+        password: Option<String>,
     },
-    /// Complete a todo by ID
-    Complete {
-        /// Todo ID
-        id: String,
-    },
-    /// Delete a todo by ID
-    Delete {
-        /// Todo ID
-        id: String,
+    /// Decrypt a file or directory
+    Decrypt {
+        /// File or directory path to decrypt
+        path: PathBuf,
+        /// Output path (optional)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Enable compression/decompression
+        #[arg(short, long)]
+        compress: bool,
+        /// Password (will prompt if not provided)
+        #[arg(short, long)]
+        password: Option<String>,
     },
 }
 
@@ -51,58 +53,90 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let db = TodoDatabase::new(&cli.database).await?;
-
     match cli.command {
         Some(Commands::Tui) | None => {
             // Default to TUI mode
-            let mut app = App::new(db);
+            let mut app = App::new();
             app.run().await?;
         }
-        Some(Commands::List { completed, pending }) => {
-            let todos = if completed {
-                db.get_todos_by_status(true).await?
-            } else if pending {
-                db.get_todos_by_status(false).await?
+        Some(Commands::Encrypt { path, output, compress, password }) => {
+            let password = get_password(password)?;
+            let target_type = if path.is_dir() {
+                TargetType::Directory
             } else {
-                db.get_all_todos().await?
+                TargetType::File
             };
 
-            if todos.is_empty() {
-                println!("No todos found.");
+            let mut params = OperationParams::new(
+                OperationType::Encrypt,
+                target_type,
+                path.clone(),
+            ).with_compression(compress);
+
+            if let Some(output) = output {
+                params = params.with_destination(output);
+            }
+
+            let operator = FileOperator::new();
+            let result = operator.process(&params, &password).await;
+
+            if result.success {
+                println!("{}", result);
             } else {
-                for todo in todos {
-                    let status = if todo.completed { "✓" } else { "○" };
-                    println!("{} {} - {}", status, todo.title, todo.id);
-                    if let Some(description) = &todo.description {
-                        println!("   {}", description);
-                    }
+                eprintln!("Error: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::Decrypt { path, output, compress, password }) => {
+            let password = get_password(password)?;
+            let target_type = if path.to_string_lossy().ends_with(".sf") 
+                || path.to_string_lossy().ends_with(".sf.gz") {
+                // Assume it was a directory if it has .sf extension
+                if path.to_string_lossy().contains("directory") {
+                    TargetType::Directory
+                } else {
+                    TargetType::File
                 }
-            }
-        }
-        Some(Commands::Add { title, description }) => {
-            let todo = Todo::new(title, description);
-            db.create_todo(&todo).await?;
-            println!("Todo added: {}", todo.id);
-        }
-        Some(Commands::Complete { id }) => {
-            if let Some(mut todo) = db.get_todo(&id).await? {
-                todo.complete();
-                db.update_todo(&todo).await?;
-                println!("Todo completed: {}", todo.title);
             } else {
-                eprintln!("Todo not found: {}", id);
+                TargetType::File
+            };
+
+            let mut params = OperationParams::new(
+                OperationType::Decrypt,
+                target_type,
+                path.clone(),
+            ).with_compression(compress);
+
+            if let Some(output) = output {
+                params = params.with_destination(output);
             }
-        }
-        Some(Commands::Delete { id }) => {
-            if let Some(todo) = db.get_todo(&id).await? {
-                db.delete_todo(&id).await?;
-                println!("Todo deleted: {}", todo.title);
+
+            let operator = FileOperator::new();
+            let result = operator.process(&params, &password).await;
+
+            if result.success {
+                println!("{}", result);
             } else {
-                eprintln!("Todo not found: {}", id);
+                eprintln!("Error: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
             }
         }
     }
 
     Ok(())
+}
+
+/// Get password from argument or prompt user
+fn get_password(password: Option<String>) -> Result<String, Box<dyn std::error::Error>> {
+    match password {
+        Some(pwd) => Ok(pwd),
+        None => {
+            use std::io::{self, Write};
+            print!("Enter password: ");
+            io::stdout().flush()?;
+            let mut password = String::new();
+            io::stdin().read_line(&mut password)?;
+            Ok(password.trim().to_string())
+        }
+    }
 }
