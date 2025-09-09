@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*.*.*'
+    branches:
+      - main
 
 jobs:
   build-and-release:
@@ -14,16 +16,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: template-rust
-            asset_name: template-rust-linux-x86_64
+            artifact_name: sf-cli
+            asset_name: sf-cli-linux-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: template-rust.exe
-            asset_name: template-rust-windows-x86_64.exe
+            artifact_name: sf-cli.exe
+            asset_name: sf-cli-windows-x86_64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: template-rust
-            asset_name: template-rust-macos-x86_64
+            artifact_name: sf-cli
+            asset_name: sf-cli-macos-x86_64
 
     steps:
     - uses: actions/checkout@v4
@@ -61,13 +63,39 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v3
     
+    - name: Set release info
+      id: release_info
+      run: |
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "release_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "prerelease=false" >> $GITHUB_OUTPUT
+        else
+          echo "tag_name=latest" >> $GITHUB_OUTPUT
+          echo "release_name=Latest Development Build" >> $GITHUB_OUTPUT
+          echo "prerelease=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Delete existing latest release if it exists
+      if: github.ref_type != 'tag'
+      run: |
+        gh release delete latest --yes || true
+        git tag -d latest || true
+        git push origin :refs/tags/latest || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          template-rust-linux-x86_64/template-rust
-          template-rust-windows-x86_64.exe/template-rust.exe
-          template-rust-macos-x86_64/template-rust
+          sf-cli-linux-x86_64/sf-cli
+          sf-cli-windows-x86_64.exe/sf-cli.exe
+          sf-cli-macos-x86_64/sf-cli
         generate_release_notes: true
+        tag_name: ${{ steps.release_info.outputs.tag_name }}
+        name: ${{ steps.release_info.outputs.release_name }}
+        prerelease: ${{ steps.release_info.outputs.prerelease == 'true' }}
+        draft: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
