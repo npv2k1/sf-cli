@@ -1,5 +1,9 @@
 # SF-CLI - Secure File Encryption CLI/TUI Tool
 
+[![CI](https://github.com/npv2k1/sf-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/npv2k1/sf-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/npv2k1/sf-cli/actions/workflows/release.yml/badge.svg)](https://github.com/npv2k1/sf-cli/actions/workflows/release.yml)
+[![Security](https://github.com/npv2k1/sf-cli/actions/workflows/security.yml/badge.svg)](https://github.com/npv2k1/sf-cli/actions/workflows/security.yml)
+
 A secure file encryption tool with password protection, supporting both command-line and terminal user interface modes.
 
 ## Features
@@ -26,6 +30,9 @@ cargo build --release
 ### From Releases
 
 Download the latest binary from the [Releases](https://github.com/npv2k1/sf-cli/releases) page.
+
+- **Latest Development Build**: Automatically updated with every push to main branch
+- **Stable Releases**: Created when version tags (e.g., v1.0.0) are pushed
 
 ## Usage
 
@@ -198,6 +205,37 @@ cargo clippy -- -D warnings
 ```bash
 cargo fmt
 ```
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment:
+
+### Workflows
+
+- **CI**: Runs on every push and pull request to main
+  - Tests, linting (clippy), formatting checks
+  - Multi-platform builds (Linux, Windows, macOS)
+
+- **Release**: Automatically creates releases
+  - **Latest Development Builds**: Created on every push to main branch as pre-release
+  - **Stable Releases**: Created when version tags (v*.*.*)  are pushed
+  - Multi-platform binaries included in all releases
+
+- **Security**: Weekly security audits and checks on main branch
+
+### Release Types
+
+1. **Development Releases** (automatic):
+   - Triggered by pushes to main branch
+   - Tagged as "latest" (replaces previous latest)
+   - Marked as pre-release
+   - Contains binaries for Linux x86_64, Windows x86_64, macOS x86_64
+
+2. **Stable Releases** (manual):
+   - Triggered by pushing version tags (e.g., `git tag v1.0.0 && git push origin v1.0.0`)
+   - Tagged with the version number
+   - Not marked as pre-release
+   - Contains binaries for all platforms
 
 ## Security Considerations
 
