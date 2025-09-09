@@ -16,6 +16,9 @@ A secure file encryption tool with password protection, supporting both command-
 - 🔒 **Memory Safety**: Secure key handling with automatic zeroization
 - ⚡ **High Performance**: Optimized for large files with streaming operations
 - 🧪 **Well Tested**: Comprehensive unit and integration tests
+- 👀 **Watch Mode**: Automatic encryption/decryption of new files in monitored directories
+- 🎯 **Smart Filtering**: Process only specific file extensions or patterns
+- 🗑️ **Auto-cleanup**: Optionally delete source files after processing
 
 ## Installation
 
@@ -63,6 +66,41 @@ Download the latest binary from the [Releases](https://github.com/npv2k1/sf-cli/
 # Decrypt a directory
 ./sf-cli decrypt my_folder.sf
 ```
+
+### Watch Mode (Auto-encrypt/decrypt)
+
+Watch mode monitors directories for file changes and automatically processes them:
+
+```bash
+# Watch directory and auto-encrypt new files
+./sf-cli watch-encrypt /path/to/source --password mypass
+
+# Watch with target directory and delete source files
+./sf-cli watch-encrypt /path/to/source -t /path/to/encrypted -d --password mypass
+
+# Watch with file extension filtering (only .txt and .doc files)
+./sf-cli watch-encrypt /path/to/source -e "txt,doc" --password mypass
+
+# Process existing files on startup
+./sf-cli watch-encrypt /path/to/source --process-existing --password mypass
+
+# Watch directory and auto-decrypt encrypted files
+./sf-cli watch-decrypt /path/to/encrypted -t /path/to/decrypted --password mypass
+
+# Watch decrypt with compression and delete source
+./sf-cli watch-decrypt /path/to/encrypted -c -d --password mypass
+```
+
+#### Watch Mode Features:
+- **Auto-encryption**: Monitors a directory and encrypts new files automatically
+- **Auto-decryption**: Monitors a directory and decrypts encrypted files automatically  
+- **Password once**: Set password once at startup, no need to re-enter
+- **Target directory**: Specify different output directory (defaults to same directory)
+- **Delete source**: Optionally delete source files after processing
+- **Extension filtering**: Only process files with specific extensions
+- **Process existing**: Process files that already exist in the directory
+- **Compression support**: Enable compression for encrypted files
+- **Live monitoring**: Real-time file system watching with debouncing
 
 ### Terminal User Interface (TUI)
 
@@ -115,6 +153,44 @@ echo "This is sensitive data" > secret.txt
 # Decrypt it
 ./sf-cli decrypt secret.sf  
 # Output: ✓ Decrypt secret.sf -> secret (23 bytes)
+```
+
+### Watch Mode Examples
+
+```bash
+# Setup watch directories
+mkdir -p /tmp/documents /tmp/encrypted /tmp/decrypted
+
+# Start watching for new documents to encrypt
+./sf-cli watch-encrypt /tmp/documents -t /tmp/encrypted -p mypassword &
+
+# Add files to watch - they will be automatically encrypted
+echo "Confidential report" > /tmp/documents/report.txt
+echo "Meeting notes" > /tmp/documents/notes.txt
+# Files automatically encrypted to /tmp/encrypted/
+
+# Start watching encrypted directory for auto-decryption
+./sf-cli watch-decrypt /tmp/encrypted -t /tmp/decrypted -p mypassword &
+
+# Any new .sf files in /tmp/encrypted will be auto-decrypted to /tmp/decrypted/
+```
+
+### Advanced Watch Usage
+
+```bash
+# Watch only specific file types and delete originals
+./sf-cli watch-encrypt /home/user/documents \
+  --target-dir /backup/encrypted \
+  --extensions "txt,doc,pdf" \
+  --delete-source \
+  --process-existing \
+  --password mypassword
+
+# Watch with compression
+./sf-cli watch-encrypt /data/logs \
+  --compress \
+  --delete-source \
+  --password logpass
 ```
 
 ### Compression Example
