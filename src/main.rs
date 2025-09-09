@@ -3,6 +3,7 @@ use sf_cli::{
     file_ops::FileOperator,
     models::{OperationParams, OperationType, TargetType},
     tui::App,
+    watch::{FileWatcher, WatchConfig},
 };
 use std::path::PathBuf;
 
@@ -46,6 +47,49 @@ enum Commands {
         /// Password (will prompt if not provided)
         #[arg(short, long)]
         password: Option<String>,
+    },
+    /// Watch a directory and automatically encrypt new files
+    WatchEncrypt {
+        /// Directory to watch for new files
+        watch_dir: PathBuf,
+        /// Target directory for encrypted files (optional, defaults to same directory)
+        #[arg(short, long)]
+        target_dir: Option<PathBuf>,
+        /// Password for encryption (will prompt if not provided)
+        #[arg(short, long)]
+        password: Option<String>,
+        /// Delete source files after encryption
+        #[arg(short, long)]
+        delete_source: bool,
+        /// Enable compression
+        #[arg(short, long)]
+        compress: bool,
+        /// File extensions to watch (comma-separated, e.g., "txt,doc")
+        #[arg(short, long)]
+        extensions: Option<String>,
+        /// Process existing files in directory on startup
+        #[arg(long)]
+        process_existing: bool,
+    },
+    /// Watch a directory and automatically decrypt encrypted files
+    WatchDecrypt {
+        /// Directory to watch for encrypted files
+        watch_dir: PathBuf,
+        /// Target directory for decrypted files (optional, defaults to same directory)
+        #[arg(short, long)]
+        target_dir: Option<PathBuf>,
+        /// Password for decryption (will prompt if not provided)
+        #[arg(short, long)]
+        password: Option<String>,
+        /// Delete encrypted files after decryption
+        #[arg(short, long)]
+        delete_source: bool,
+        /// Enable compression/decompression
+        #[arg(short, long)]
+        compress: bool,
+        /// Process existing encrypted files in directory on startup
+        #[arg(long)]
+        process_existing: bool,
     },
 }
 
@@ -118,6 +162,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", result);
             } else {
                 eprintln!("Error: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::WatchEncrypt { 
+            watch_dir, 
+            target_dir, 
+            password, 
+            delete_source, 
+            compress, 
+            extensions,
+            process_existing 
+        }) => {
+            let password = get_password(password)?;
+            
+            let mut config = WatchConfig::new(
+                watch_dir,
+                OperationType::Encrypt,
+                password,
+            )
+            .with_delete_source(delete_source)
+            .with_compression(compress)
+            .with_process_existing(process_existing);
+
+            if let Some(target_dir) = target_dir {
+                config = config.with_target_dir(target_dir);
+            }
+
+            if let Some(extensions_str) = extensions {
+                let ext_list: Vec<String> = extensions_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect();
+                config = config.with_extensions(ext_list);
+            }
+
+            let watcher = FileWatcher::new(config);
+            if let Err(e) = watcher.start().await {
+                eprintln!("Watch error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::WatchDecrypt { 
+            watch_dir, 
+            target_dir, 
+            password, 
+            delete_source, 
+            compress,
+            process_existing 
+        }) => {
+            let password = get_password(password)?;
+            
+            let mut config = WatchConfig::new(
+                watch_dir,
+                OperationType::Decrypt,
+                password,
+            )
+            .with_delete_source(delete_source)
+            .with_compression(compress)
+            .with_process_existing(process_existing);
+
+            if let Some(target_dir) = target_dir {
+                config = config.with_target_dir(target_dir);
+            }
+
+            let watcher = FileWatcher::new(config);
+            if let Err(e) = watcher.start().await {
+                eprintln!("Watch error: {}", e);
                 std::process::exit(1);
             }
         }

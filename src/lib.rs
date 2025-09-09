@@ -9,6 +9,7 @@ pub mod file_ops;
 pub mod progress;
 pub mod models;
 pub mod tui;
+pub mod watch;
 
 pub use models::*;
 
