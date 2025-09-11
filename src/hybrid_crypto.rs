@@ -16,9 +16,9 @@ use p256::{
     elliptic_curve::sec1::ToEncodedPoint,
 };
 use sha2::Sha256;
+use hkdf::Hkdf;
 use std::path::Path;
 use thiserror::Error;
-use zeroize::Zeroize;
 
 /// Hybrid encryption errors
 #[derive(Error, Debug)]
@@ -210,11 +210,23 @@ impl HybridCryptoEngine {
     fn encrypt_session_key_rsa(
         &self,
         _session_key: &[u8; SESSION_KEY_SIZE],
-        _public_key: &HybridPublicKey,
+        public_key: &HybridPublicKey,
     ) -> Result<Vec<u8>, HybridCryptoError> {
-        // Placeholder implementation - requires proper SSH key format handling
-        Err(HybridCryptoError::EcdsaError(
-            "RSA encryption not yet fully implemented - requires SSH key format conversion".to_string()
+        // For now, let's use a simple approach - convert the SSH key to OpenSSH format
+        // and then parse it manually. This is a temporary implementation that works
+        // with the available API.
+        
+        // Get the key data in OpenSSH format
+        let _openssh_str = public_key.ssh_key.to_openssh()
+            .map_err(|e| HybridCryptoError::SshKeyError(SshKeyError::SshKeyError(e)))?;
+        
+        // For RSA keys, we need to extract the public key components
+        // This is a simplified implementation - in a real implementation,
+        // we would properly parse the SSH key format
+        
+        // For now, return an error indicating this needs proper implementation
+        Err(HybridCryptoError::UnsupportedAlgorithm(
+            "RSA key conversion from SSH format not yet fully implemented".to_string()
         ))
     }
 
@@ -222,12 +234,26 @@ impl HybridCryptoEngine {
     fn encrypt_session_key_ecdsa(
         &self,
         _session_key: &[u8; SESSION_KEY_SIZE],
-        _public_key: &HybridPublicKey,
+        public_key: &HybridPublicKey,
     ) -> Result<Vec<u8>, HybridCryptoError> {
-        // Placeholder implementation - requires proper SSH key format handling
-        Err(HybridCryptoError::EcdsaError(
-            "ECDSA encryption not yet fully implemented - requires SSH key format conversion".to_string()
-        ))
+        // Similar temporary implementation for ECDSA
+        match public_key.ssh_key.algorithm() {
+            ssh_key::Algorithm::Ecdsa { curve } => {
+                if curve.as_str() != "nistp256" {
+                    return Err(HybridCryptoError::UnsupportedAlgorithm(
+                        format!("Unsupported ECDSA curve: {}", curve)
+                    ));
+                }
+                
+                // For now, return an error indicating this needs proper implementation
+                Err(HybridCryptoError::EcdsaError(
+                    "ECDSA key conversion from SSH format not yet fully implemented".to_string()
+                ))
+            }
+            _ => Err(HybridCryptoError::UnsupportedAlgorithm(
+                "Expected ECDSA key but got different type".to_string()
+            )),
+        }
     }
 
     /// Encrypt data with hybrid encryption
