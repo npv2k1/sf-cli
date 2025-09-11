@@ -8,6 +8,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
+use base64::{Engine as _, engine::general_purpose};
 use rand::RngCore;
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
 use p256::{
@@ -209,51 +210,194 @@ impl HybridCryptoEngine {
     /// Encrypt session key with RSA public key
     fn encrypt_session_key_rsa(
         &self,
-        _session_key: &[u8; SESSION_KEY_SIZE],
+        session_key: &[u8; SESSION_KEY_SIZE],
         public_key: &HybridPublicKey,
     ) -> Result<Vec<u8>, HybridCryptoError> {
-        // For now, let's use a simple approach - convert the SSH key to OpenSSH format
-        // and then parse it manually. This is a temporary implementation that works
-        // with the available API.
-        
-        // Get the key data in OpenSSH format
-        let _openssh_str = public_key.ssh_key.to_openssh()
+        // Convert SSH key to OpenSSH format and then parse manually
+        let openssh_str = public_key.ssh_key.to_openssh()
             .map_err(|e| HybridCryptoError::SshKeyError(SshKeyError::SshKeyError(e)))?;
         
-        // For RSA keys, we need to extract the public key components
-        // This is a simplified implementation - in a real implementation,
-        // we would properly parse the SSH key format
+        // For SSH RSA keys, we need to extract the RSA public key components
+        // The SSH key format is: algorithm_name public_key_blob comment
+        // The public_key_blob is base64 encoded and contains:
+        // - algorithm name (string)
+        // - public exponent e (mpint)
+        // - modulus n (mpint)
         
-        // For now, return an error indicating this needs proper implementation
-        Err(HybridCryptoError::UnsupportedAlgorithm(
-            "RSA key conversion from SSH format not yet fully implemented".to_string()
-        ))
+        let parts: Vec<&str> = openssh_str.trim().split_whitespace().collect();
+        if parts.len() < 2 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                "Invalid SSH key format".to_string()
+            ));
+        }
+        
+        if parts[0] != "ssh-rsa" {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                format!("Expected ssh-rsa but got {}", parts[0])
+            ));
+        }
+        
+        // Decode the base64 blob
+        let blob = general_purpose::STANDARD.decode(parts[1])
+            .map_err(|e| HybridCryptoError::UnsupportedAlgorithm(
+                format!("Failed to decode SSH key blob: {}", e)
+            ))?;
+        
+        // Parse the SSH wire format
+        let mut offset = 0;
+        
+        // Skip algorithm name (string)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let name_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4 + name_len;
+        
+        // Read public exponent e (mpint)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let e_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4;
+        if blob.len() < offset + e_len {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let e_bytes = &blob[offset..offset + e_len];
+        let e = rsa::BigUint::from_bytes_be(e_bytes);
+        offset += e_len;
+        
+        // Read modulus n (mpint)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let n_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4;
+        if blob.len() < offset + n_len {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let n_bytes = &blob[offset..offset + n_len];
+        let n = rsa::BigUint::from_bytes_be(n_bytes);
+        
+        // Create RSA public key
+        let rsa_key = RsaPublicKey::new(n, e)
+            .map_err(|e| HybridCryptoError::RsaError(e))?;
+        
+        // Encrypt session key using PKCS#1 v1.5 padding
+        let mut rng = OsRng;
+        let encrypted_key = rsa_key
+            .encrypt(&mut rng, Pkcs1v15Encrypt, session_key)
+            .map_err(|e| HybridCryptoError::RsaError(e))?;
+
+        Ok(encrypted_key)
     }
 
     /// Encrypt session key with ECDSA P-256 public key using ECDH
     fn encrypt_session_key_ecdsa(
         &self,
-        _session_key: &[u8; SESSION_KEY_SIZE],
+        session_key: &[u8; SESSION_KEY_SIZE],
         public_key: &HybridPublicKey,
     ) -> Result<Vec<u8>, HybridCryptoError> {
-        // Similar temporary implementation for ECDSA
-        match public_key.ssh_key.algorithm() {
-            ssh_key::Algorithm::Ecdsa { curve } => {
-                if curve.as_str() != "nistp256" {
-                    return Err(HybridCryptoError::UnsupportedAlgorithm(
-                        format!("Unsupported ECDSA curve: {}", curve)
-                    ));
-                }
-                
-                // For now, return an error indicating this needs proper implementation
-                Err(HybridCryptoError::EcdsaError(
-                    "ECDSA key conversion from SSH format not yet fully implemented".to_string()
-                ))
-            }
-            _ => Err(HybridCryptoError::UnsupportedAlgorithm(
-                "Expected ECDSA key but got different type".to_string()
-            )),
+        // Convert SSH key to OpenSSH format and parse ECDSA key
+        let openssh_str = public_key.ssh_key.to_openssh()
+            .map_err(|e| HybridCryptoError::SshKeyError(SshKeyError::SshKeyError(e)))?;
+        
+        let parts: Vec<&str> = openssh_str.trim().split_whitespace().collect();
+        if parts.len() < 2 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                "Invalid SSH key format".to_string()
+            ));
         }
+        
+        if !parts[0].starts_with("ecdsa-sha2-") {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                format!("Expected ecdsa-sha2-* but got {}", parts[0])
+            ));
+        }
+        
+        // Decode the base64 blob
+        let blob = general_purpose::STANDARD.decode(parts[1])
+            .map_err(|e| HybridCryptoError::UnsupportedAlgorithm(
+                format!("Failed to decode SSH key blob: {}", e)
+            ))?;
+        
+        // Parse the SSH wire format for ECDSA
+        let mut offset = 0;
+        
+        // Skip algorithm name (string)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let name_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4 + name_len;
+        
+        // Read curve name (string)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let curve_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4;
+        if blob.len() < offset + curve_len {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let curve_name = std::str::from_utf8(&blob[offset..offset + curve_len])
+            .map_err(|e| HybridCryptoError::UnsupportedAlgorithm(format!("Invalid curve name: {}", e)))?;
+        offset += curve_len;
+        
+        if curve_name != "nistp256" {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                format!("Unsupported ECDSA curve: {}", curve_name)
+            ));
+        }
+        
+        // Read public key point (string)
+        if blob.len() < offset + 4 {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let point_len = u32::from_be_bytes([blob[offset], blob[offset+1], blob[offset+2], blob[offset+3]]) as usize;
+        offset += 4;
+        if blob.len() < offset + point_len {
+            return Err(HybridCryptoError::UnsupportedAlgorithm("Invalid blob format".to_string()));
+        }
+        let point_bytes = &blob[offset..offset + point_len];
+        
+        // Parse the P-256 public key from the uncompressed point format
+        let p256_key = P256PublicKey::from_sec1_bytes(point_bytes)
+            .map_err(|e| HybridCryptoError::EcdsaError(format!("Invalid P-256 point: {}", e)))?;
+
+        // Generate ephemeral key pair for ECDH
+        let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
+        let ephemeral_public = ephemeral_secret.public_key();
+        
+        // Perform ECDH to get shared secret
+        let shared_secret = ephemeral_secret.diffie_hellman(&p256_key);
+        
+        // Use HKDF to derive key encryption key from shared secret
+        let hk = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
+        let mut kek = [0u8; 32]; // Key encryption key
+        hk.expand(b"sf-cli-hybrid-v1", &mut kek)
+            .map_err(|e| HybridCryptoError::EcdsaError(format!("HKDF expansion failed: {}", e)))?;
+
+        // Encrypt session key with AES-256
+        let cipher = aes_gcm::Aes256Gcm::new_from_slice(&kek)
+            .map_err(|e| HybridCryptoError::CryptoError(CryptoError::EncryptionFailed(e.to_string())))?;
+        
+        // Generate nonce for session key encryption
+        let mut key_nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut key_nonce);
+        
+        let nonce_obj = aes_gcm::Nonce::from_slice(&key_nonce);
+        let encrypted_session_key = cipher
+            .encrypt(nonce_obj, session_key.as_ref())
+            .map_err(|e| HybridCryptoError::CryptoError(CryptoError::EncryptionFailed(e.to_string())))?;
+
+        // Return: ephemeral_public_key (33 bytes) + nonce (12 bytes) + encrypted_session_key
+        let ephemeral_point = ephemeral_public.to_encoded_point(true); // Compressed format
+        let mut result = Vec::with_capacity(33 + 12 + encrypted_session_key.len());
+        result.extend_from_slice(ephemeral_point.as_bytes());
+        result.extend_from_slice(&key_nonce);
+        result.extend_from_slice(&encrypted_session_key);
+        
+        Ok(result)
     }
 
     /// Encrypt data with hybrid encryption
