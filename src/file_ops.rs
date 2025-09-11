@@ -6,7 +6,6 @@ use crate::{
     hybrid_crypto::{HybridCryptoEngine, HybridCryptoError},
     models::{OperationParams, OperationResult, OperationType, TargetType},
     progress::ProgressTracker,
-    ssh_keys::{SshKeyDiscovery, SshKeyError},
 };
 use std::{
     fs::{self, File},
