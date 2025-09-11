@@ -128,11 +128,19 @@ impl WatchConfig {
         match self.operation {
             OperationType::Encrypt => {
                 // For encryption, avoid processing already encrypted files
-                !path_str.ends_with(".sf") && !path_str.ends_with(".sf.gz")
+                !path_str.ends_with(".sf") && !path_str.ends_with(".sf.gz") && !path_str.ends_with(".hsf")
             }
             OperationType::Decrypt => {
                 // For decryption, only process encrypted files
                 path_str.ends_with(".sf") || path_str.ends_with(".sf.gz")
+            }
+            OperationType::HybridEncrypt => {
+                // For hybrid encryption, avoid processing already encrypted files
+                !path_str.ends_with(".sf") && !path_str.ends_with(".sf.gz") && !path_str.ends_with(".hsf")
+            }
+            OperationType::HybridDecrypt => {
+                // For hybrid decryption, only process hybrid encrypted files
+                path_str.ends_with(".hsf")
             }
         }
     }
@@ -178,6 +186,8 @@ impl FileWatcher {
             match self.config.operation {
                 OperationType::Encrypt => "encryption",
                 OperationType::Decrypt => "decryption",
+                OperationType::HybridEncrypt => "hybrid encryption",
+                OperationType::HybridDecrypt => "hybrid decryption",
             },
             self.config.watch_dir.display()
         );
@@ -395,6 +405,17 @@ impl FileWatcher {
                         PathBuf::from(path_str.trim_end_matches(".sf.gz"))
                     } else if path_str.ends_with(".sf") {
                         PathBuf::from(path_str.trim_end_matches(".sf"))
+                    } else {
+                        target_path.with_extension("decrypted")
+                    }
+                }
+                OperationType::HybridEncrypt => {
+                    target_path.with_extension("hsf")
+                }
+                OperationType::HybridDecrypt => {
+                    let path_str = target_path.to_string_lossy();
+                    if path_str.ends_with(".hsf") {
+                        PathBuf::from(path_str.trim_end_matches(".hsf"))
                     } else {
                         target_path.with_extension("decrypted")
                     }

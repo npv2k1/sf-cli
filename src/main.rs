@@ -4,6 +4,7 @@ use sf_cli::{
     models::{OperationParams, OperationType, TargetType},
     tui::App,
     watch::{FileWatcher, WatchConfig},
+    ssh_keys::SshKeyDiscovery,
 };
 use std::path::PathBuf;
 
@@ -90,6 +91,34 @@ enum Commands {
         /// Process existing encrypted files in directory on startup
         #[arg(long)]
         process_existing: bool,
+    },
+    /// Encrypt a file or directory using hybrid encryption (public key + AES)
+    HybridEncrypt {
+        /// File or directory path to encrypt
+        path: PathBuf,
+        /// Output path (optional)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Enable compression
+        #[arg(short, long)]
+        compress: bool,
+        /// Public key file path (optional, will auto-discover from ~/.ssh if not provided)
+        #[arg(long)]
+        public_key: Option<PathBuf>,
+    },
+    /// Decrypt a file or directory using hybrid encryption (private key + AES)
+    HybridDecrypt {
+        /// File or directory path to decrypt
+        path: PathBuf,
+        /// Output path (optional)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Enable compression/decompression
+        #[arg(short, long)]
+        compress: bool,
+        /// Private key file path (optional, will auto-discover from ~/.ssh if not provided)
+        #[arg(long)]
+        private_key: Option<PathBuf>,
     },
 }
 
@@ -229,6 +258,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let watcher = FileWatcher::new(config);
             if let Err(e) = watcher.start().await {
                 eprintln!("Watch error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::HybridEncrypt { path, output, compress, public_key }) => {
+            let target_type = if path.is_dir() {
+                TargetType::Directory
+            } else {
+                TargetType::File
+            };
+
+            let mut params = OperationParams::new(
+                OperationType::HybridEncrypt,
+                target_type,
+                path.clone(),
+            ).with_compression(compress);
+
+            if let Some(output) = output {
+                params = params.with_destination(output);
+            }
+
+            if let Some(public_key) = public_key {
+                params = params.with_public_key_path(public_key);
+            }
+
+            let operator = FileOperator::new();
+            let result = operator.process(&params, "").await; // Empty password for hybrid mode
+
+            if result.success {
+                println!("{}", result);
+            } else {
+                eprintln!("Error: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::HybridDecrypt { path, output, compress, private_key }) => {
+            let target_type = if path.to_string_lossy().ends_with(".hsf") {
+                // Detect if it was a directory based on filename patterns
+                if path.to_string_lossy().contains("directory") {
+                    TargetType::Directory
+                } else {
+                    TargetType::File
+                }
+            } else {
+                TargetType::File
+            };
+
+            let mut params = OperationParams::new(
+                OperationType::HybridDecrypt,
+                target_type,
+                path.clone(),
+            ).with_compression(compress);
+
+            if let Some(output) = output {
+                params = params.with_destination(output);
+            }
+
+            if let Some(private_key) = private_key {
+                params = params.with_private_key_path(private_key);
+            }
+
+            let operator = FileOperator::new();
+            let result = operator.process(&params, "").await; // Empty password for hybrid mode
+
+            if result.success {
+                println!("{}", result);
+            } else {
+                eprintln!("Error: {}", result.error.unwrap_or_default());
                 std::process::exit(1);
             }
         }
