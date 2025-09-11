@@ -411,8 +411,14 @@ impl HybridCryptoEngine {
     ) -> Result<Vec<u8>, HybridCryptoError> {
         // Discover or load public key
         let public_key = match public_key_path {
-            Some(path) => self.ssh_discovery.load_public_key_from_path(path)?,
-            None => self.ssh_discovery.get_default_key()?,
+            Some(path) => {
+                println!("🔑 Using public key from: {}", path.display());
+                self.ssh_discovery.load_public_key_from_path(path)?
+            },
+            None => {
+                println!("🔍 Auto-discovering public keys...");
+                self.ssh_discovery.select_public_key_interactive()?
+            },
         };
 
         // Generate session key and nonce
@@ -476,8 +482,8 @@ impl HybridCryptoEngine {
                 self.ssh_discovery.load_private_key_from_path(path)?
             },
             None => {
-                println!("🔍 Auto-discovering private key...");
-                self.ssh_discovery.get_default_private_key()?
+                println!("🔍 Auto-discovering private keys...");
+                self.ssh_discovery.select_private_key_interactive()?
             },
         };
         
