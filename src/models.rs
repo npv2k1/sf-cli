@@ -6,10 +6,14 @@ use std::path::PathBuf;
 /// Operation type for file processing
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationType {
-    /// Encrypt files/folders
+    /// Encrypt files/folders with password
     Encrypt,
-    /// Decrypt files/folders
+    /// Decrypt files/folders with password
     Decrypt,
+    /// Encrypt files/folders with hybrid encryption (public key + symmetric)
+    HybridEncrypt,
+    /// Decrypt files/folders with hybrid encryption (private key + symmetric)
+    HybridDecrypt,
 }
 
 impl std::fmt::Display for OperationType {
@@ -17,6 +21,8 @@ impl std::fmt::Display for OperationType {
         match self {
             Self::Encrypt => write!(f, "Encrypt"),
             Self::Decrypt => write!(f, "Decrypt"),
+            Self::HybridEncrypt => write!(f, "Hybrid Encrypt"),
+            Self::HybridDecrypt => write!(f, "Hybrid Decrypt"),
         }
     }
 }
@@ -62,6 +68,10 @@ pub struct OperationParams {
     pub delete_source: bool,
     /// Whether to verify checksum after decryption
     pub verify_checksum: bool,
+    /// Public key path for hybrid encryption (optional, will auto-discover if None)
+    pub public_key_path: Option<PathBuf>,
+    /// Private key path for hybrid decryption (optional, will auto-discover if None)
+    pub private_key_path: Option<PathBuf>,
 }
 
 impl OperationParams {
@@ -82,6 +92,8 @@ impl OperationParams {
             preserve_filename: true, // Default to preserving filenames
             delete_source: false,    // Default to keeping source files
             verify_checksum: true,   // Default to verifying checksums
+            public_key_path: None,   // Auto-discover by default
+            private_key_path: None,  // Auto-discover by default
         }
     }
 
@@ -127,6 +139,18 @@ impl OperationParams {
         self
     }
 
+    /// Set public key path for hybrid encryption
+    pub fn with_public_key_path(mut self, public_key_path: PathBuf) -> Self {
+        self.public_key_path = Some(public_key_path);
+        self
+    }
+
+    /// Set private key path for hybrid decryption
+    pub fn with_private_key_path(mut self, private_key_path: PathBuf) -> Self {
+        self.private_key_path = Some(private_key_path);
+        self
+    }
+
     /// Get the default destination path based on source and operation
     pub fn get_destination(&self) -> PathBuf {
         if let Some(dest) = &self.destination {
@@ -163,6 +187,23 @@ impl OperationParams {
                         }
                     }
                 }
+                OperationType::HybridEncrypt => {
+                    // Use .hsf (hybrid secure file) extension
+                    if self.preserve_filename {
+                        let original_ext = self.source.extension()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        
+                        if original_ext.is_empty() {
+                            self.source.with_extension("hsf")
+                        } else {
+                            self.source.with_extension(format!("{}.hsf", original_ext))
+                        }
+                    } else {
+                        self.source.with_extension("hsf")
+                    }
+                }
                 OperationType::Decrypt => {
                     if self.preserve_filename {
                         // Will be determined from metadata during decryption
@@ -185,6 +226,15 @@ impl OperationParams {
                         } else {
                             self.source.with_extension("decrypted")
                         }
+                    }
+                }
+                OperationType::HybridDecrypt => {
+                    // Remove .hsf extension
+                    let source_str = self.source.to_string_lossy();
+                    if source_str.ends_with(".hsf") {
+                        PathBuf::from(source_str.trim_end_matches(".hsf"))
+                    } else {
+                        self.source.with_extension("decrypted")
                     }
                 }
             }

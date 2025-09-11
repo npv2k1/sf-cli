@@ -123,6 +123,22 @@ impl FileOperator {
                     ),
                 }
             }
+            OperationType::HybridEncrypt => {
+                // Placeholder for hybrid encryption
+                OperationResult::failure(
+                    source.clone(),
+                    params.operation.clone(),
+                    "Hybrid encryption not yet implemented".to_string(),
+                )
+            }
+            OperationType::HybridDecrypt => {
+                // Placeholder for hybrid decryption
+                OperationResult::failure(
+                    source.clone(),
+                    params.operation.clone(),
+                    "Hybrid decryption not yet implemented".to_string(),
+                )
+            }
         };
 
         result
@@ -166,6 +182,22 @@ impl FileOperator {
                         e.to_string(),
                     ),
                 }
+            }
+            OperationType::HybridEncrypt => {
+                // Placeholder for hybrid directory encryption
+                OperationResult::failure(
+                    source.clone(),
+                    params.operation.clone(),
+                    "Hybrid directory encryption not yet implemented".to_string(),
+                )
+            }
+            OperationType::HybridDecrypt => {
+                // Placeholder for hybrid directory decryption
+                OperationResult::failure(
+                    source.clone(),
+                    params.operation.clone(),
+                    "Hybrid directory decryption not yet implemented".to_string(),
+                )
             }
         }
     }

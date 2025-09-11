@@ -10,6 +10,8 @@ pub mod progress;
 pub mod models;
 pub mod tui;
 pub mod watch;
+pub mod ssh_keys;
+pub mod hybrid_crypto;
 
 pub use models::*;
 
