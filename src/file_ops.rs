@@ -5,6 +5,7 @@ use crate::{
     crypto::{CryptoEngine, CryptoError, FileMetadata},
     models::{OperationParams, OperationResult, OperationType, TargetType},
     progress::ProgressTracker,
+    ssh_keys::{SshKeyDiscovery, SshKeyError},
 };
 use std::{
     fs::{self, File},
@@ -124,20 +125,85 @@ impl FileOperator {
                 }
             }
             OperationType::HybridEncrypt => {
-                // Placeholder for hybrid encryption
-                OperationResult::failure(
-                    source.clone(),
-                    params.operation.clone(),
-                    "Hybrid encryption not yet implemented".to_string(),
-                )
+                // Display helpful message about SSH keys and show discovered keys
+                println!("🔑 Hybrid Encryption Mode");
+                println!("=========================");
+                
+                // Try to discover SSH keys
+                match SshKeyDiscovery::new().discover_keys() {
+                    Ok(keys) => {
+                        println!("✅ Found {} SSH public key(s):", keys.len());
+                        for (i, key) in keys.iter().enumerate() {
+                            println!("  {}. {}", i + 1, key.display_name());
+                        }
+                        println!("\n⚠️  Note: Hybrid encryption implementation is in progress.");
+                        println!("📝 The infrastructure is ready but requires SSH key format conversion.");
+                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to ensure you have RSA keys available.");
+                        
+                        OperationResult::failure(
+                            source.clone(),
+                            params.operation.clone(),
+                            "Hybrid encryption core implementation pending - SSH key integration in progress".to_string(),
+                        )
+                    }
+                    Err(SshKeyError::NoSshDirectory) => {
+                        println!("❌ No SSH directory found (~/.ssh)");
+                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to generate SSH keys first");
+                        
+                        OperationResult::failure(
+                            source.clone(),
+                            params.operation.clone(),
+                            "No SSH directory found. Generate SSH keys with: ssh-keygen -t rsa -b 2048".to_string(),
+                        )
+                    }
+                    Err(SshKeyError::NoPublicKeysFound) => {
+                        println!("❌ No public keys found in ~/.ssh");
+                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to generate SSH keys");
+                        
+                        OperationResult::failure(
+                            source.clone(),
+                            params.operation.clone(),
+                            "No public keys found. Generate SSH keys with: ssh-keygen -t rsa -b 2048".to_string(),
+                        )
+                    }
+                    Err(e) => {
+                        OperationResult::failure(
+                            source.clone(),
+                            params.operation.clone(),
+                            format!("SSH key discovery error: {}", e),
+                        )
+                    }
+                }
             }
             OperationType::HybridDecrypt => {
-                // Placeholder for hybrid decryption
-                OperationResult::failure(
-                    source.clone(),
-                    params.operation.clone(),
-                    "Hybrid decryption not yet implemented".to_string(),
-                )
+                // Display helpful message about hybrid decryption
+                println!("🔓 Hybrid Decryption Mode");
+                println!("=========================");
+                println!("⚠️  Note: Hybrid decryption requires private key support.");
+                println!("📁 Looking for hybrid encrypted file: {}", source.display());
+                
+                if !source.exists() {
+                    OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        "File not found".to_string(),
+                    )
+                } else if !source.to_string_lossy().ends_with(".hsf") {
+                    OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        "File does not appear to be hybrid encrypted (.hsf extension expected)".to_string(),
+                    )
+                } else {
+                    println!("🔧 Private key decryption not yet implemented");
+                    println!("📝 This requires SSH private key handling and is coming soon");
+                    
+                    OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        "Hybrid decryption implementation pending - requires private key support".to_string(),
+                    )
+                }
             }
         };
 
@@ -184,19 +250,26 @@ impl FileOperator {
                 }
             }
             OperationType::HybridEncrypt => {
-                // Placeholder for hybrid directory encryption
+                // Hybrid directory encryption
+                println!("📁 Hybrid Directory Encryption");
+                println!("==============================");
+                println!("🔑 This will compress the directory and encrypt with hybrid encryption");
+                
                 OperationResult::failure(
                     source.clone(),
                     params.operation.clone(),
-                    "Hybrid directory encryption not yet implemented".to_string(),
+                    "Hybrid directory encryption implementation pending".to_string(),
                 )
             }
             OperationType::HybridDecrypt => {
-                // Placeholder for hybrid directory decryption
+                // Hybrid directory decryption
+                println!("📁 Hybrid Directory Decryption");
+                println!("==============================");
+                
                 OperationResult::failure(
                     source.clone(),
                     params.operation.clone(),
-                    "Hybrid directory decryption not yet implemented".to_string(),
+                    "Hybrid directory decryption implementation pending".to_string(),
                 )
             }
         }
