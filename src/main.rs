@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use sf_cli::{
     file_ops::FileOperator,
     models::{OperationParams, OperationType, TargetType},
+    ssh_keys::{KeyAlgorithm, SshKeyDiscovery},
     tui::App,
     watch::{FileWatcher, WatchConfig},
 };
@@ -119,6 +120,39 @@ enum Commands {
         #[arg(long)]
         private_key: Option<PathBuf>,
     },
+    /// Generate SSH key pairs for hybrid encryption
+    Keygen {
+        /// Key algorithm to generate
+        #[arg(short, long, value_enum, default_value = "rsa")]
+        algorithm: KeygenAlgorithm,
+        /// Key size in bits (RSA only, min 2048)
+        #[arg(short = 's', long)]
+        key_size: Option<usize>,
+        /// Comment for the key
+        #[arg(short, long)]
+        comment: Option<String>,
+        /// Output file path (without extension, .pub will be added for public key)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+}
+
+/// Key algorithms for key generation
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum KeygenAlgorithm {
+    Rsa,
+    EcdsaP256,
+    Ed25519,
+}
+
+impl From<KeygenAlgorithm> for KeyAlgorithm {
+    fn from(alg: KeygenAlgorithm) -> Self {
+        match alg {
+            KeygenAlgorithm::Rsa => KeyAlgorithm::Rsa,
+            KeygenAlgorithm::EcdsaP256 => KeyAlgorithm::EcdsaP256,
+            KeygenAlgorithm::Ed25519 => KeyAlgorithm::Ed25519,
+        }
+    }
 }
 
 #[tokio::main]
@@ -325,6 +359,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 eprintln!("Error: {}", result.error.unwrap_or_default());
                 std::process::exit(1);
+            }
+        }
+        Some(Commands::Keygen { algorithm, key_size, comment, output }) => {
+            let ssh_discovery = SshKeyDiscovery::new();
+            let key_algorithm = KeyAlgorithm::from(algorithm);
+            
+            // Validate key size for RSA
+            if let (KeyAlgorithm::Rsa, Some(size)) = (&key_algorithm, key_size) {
+                if size < 2048 {
+                    eprintln!("Error: RSA key size must be at least 2048 bits");
+                    std::process::exit(1);
+                }
+            }
+            
+            match ssh_discovery.generate_key_pair(key_algorithm, key_size, comment, output) {
+                Ok((private_path, public_path)) => {
+                    println!("✅ Key pair generated successfully!");
+                    println!("🔐 Private key: {}", private_path.display());
+                    println!("🔑 Public key:  {}", public_path.display());
+                    println!("\n💡 You can now use these keys with hybrid encrypt/decrypt:");
+                    println!("   sf-cli hybrid-encrypt --public-key {} <file>", public_path.display());
+                    println!("   sf-cli hybrid-decrypt --private-key {} <encrypted_file>", private_path.display());
+                }
+                Err(e) => {
+                    eprintln!("Error generating key pair: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

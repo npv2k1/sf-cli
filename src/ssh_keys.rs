@@ -1,6 +1,6 @@
 //! SSH key discovery and management for hybrid encryption
 
-use ssh_key::{PublicKey as SshPublicKey, PrivateKey as SshPrivateKey, Algorithm};
+use ssh_key::{PublicKey as SshPublicKey, PrivateKey as SshPrivateKey, Algorithm, LineEnding};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -22,6 +22,8 @@ pub enum SshKeyError {
     IoError(#[from] std::io::Error),
     #[error("SSH key parsing error: {0}")]
     SshKeyError(#[from] ssh_key::Error),
+    #[error("Key generation failed: {0}")]
+    KeyGenerationFailed(String),
 }
 
 /// Supported key algorithms for hybrid encryption
@@ -390,6 +392,102 @@ impl SshKeyDiscovery {
         // Try to read the directory to check permissions
         fs::read_dir(&self.ssh_dir)?;
         Ok(())
+    }
+
+    /// Prompt user to select a public key from multiple available keys
+    pub fn select_public_key_interactive(&self) -> Result<HybridPublicKey, SshKeyError> {
+        let keys = self.discover_keys()?;
+        
+        if keys.is_empty() {
+            return Err(SshKeyError::NoPublicKeysFound);
+        }
+        
+        if keys.len() == 1 {
+            println!("🔑 Using public key: {}", keys[0].display_name());
+            return Ok(keys[0].clone());
+        }
+        
+        // Multiple keys found, prompt user to select
+        println!("\n🔑 Multiple public keys found in ~/.ssh:");
+        for (index, key) in keys.iter().enumerate() {
+            println!("  [{}] {}", index + 1, key.display_name());
+        }
+        
+        loop {
+            print!("\nSelect a key (1-{}): ", keys.len());
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).map_err(|e| {
+                SshKeyError::IoError(e)
+            })?;
+            
+            if let Ok(selection) = input.trim().parse::<usize>() {
+                if selection >= 1 && selection <= keys.len() {
+                    let selected_key = &keys[selection - 1];
+                    println!("✅ Selected: {}", selected_key.display_name());
+                    return Ok(selected_key.clone());
+                }
+            }
+            
+            println!("❌ Invalid selection. Please enter a number between 1 and {}.", keys.len());
+        }
+    }
+
+    /// Prompt user to select a private key from multiple available keys
+    pub fn select_private_key_interactive(&self) -> Result<HybridPrivateKey, SshKeyError> {
+        let keys = self.discover_private_keys()?;
+        
+        if keys.is_empty() {
+            return Err(SshKeyError::NoPublicKeysFound);
+        }
+        
+        if keys.len() == 1 {
+            println!("🔑 Using private key: {}", keys[0].display_name());
+            return Ok(keys[0].clone());
+        }
+        
+        // Multiple keys found, prompt user to select
+        println!("\n🔑 Multiple private keys found in ~/.ssh:");
+        for (index, key) in keys.iter().enumerate() {
+            println!("  [{}] {}", index + 1, key.display_name());
+        }
+        
+        loop {
+            print!("\nSelect a key (1-{}): ", keys.len());
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).map_err(|e| {
+                SshKeyError::IoError(e)
+            })?;
+            
+            if let Ok(selection) = input.trim().parse::<usize>() {
+                if selection >= 1 && selection <= keys.len() {
+                    let selected_key = &keys[selection - 1];
+                    println!("✅ Selected: {}", selected_key.display_name());
+                    return Ok(selected_key.clone());
+                }
+            }
+            
+            println!("❌ Invalid selection. Please enter a number between 1 and {}.", keys.len());
+        }
+    }
+
+    /// Generate a new SSH key pair
+    pub fn generate_key_pair(
+        &self,
+        algorithm: KeyAlgorithm,
+        key_size: Option<usize>,
+        comment: Option<String>,
+        output_path: Option<PathBuf>,
+    ) -> Result<(PathBuf, PathBuf), SshKeyError> {
+        // For now, return an error indicating this feature is under development
+        Err(SshKeyError::KeyGenerationFailed(
+            "Key generation is under development. Please use ssh-keygen for now.".to_string()
+        ))
     }
 }
 
