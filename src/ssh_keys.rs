@@ -1,6 +1,6 @@
 //! SSH key discovery and management for hybrid encryption
 
-use ssh_key::{PublicKey as SshPublicKey, PrivateKey as SshPrivateKey, Algorithm, LineEnding};
+use ssh_key::{PublicKey as SshPublicKey, PrivateKey as SshPrivateKey, Algorithm};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -484,10 +484,99 @@ impl SshKeyDiscovery {
         comment: Option<String>,
         output_path: Option<PathBuf>,
     ) -> Result<(PathBuf, PathBuf), SshKeyError> {
-        // For now, return an error indicating this feature is under development
-        Err(SshKeyError::KeyGenerationFailed(
-            "Key generation is under development. Please use ssh-keygen for now.".to_string()
-        ))
+        use std::process::Command;
+        
+        // For now, use ssh-keygen command to generate keys reliably
+        // This ensures compatibility and avoids complex SSH key format handling
+        
+        let key_type = match algorithm {
+            KeyAlgorithm::Rsa => "rsa",
+            KeyAlgorithm::EcdsaP256 => "ecdsa",
+            KeyAlgorithm::Ed25519 => "ed25519",
+        };
+        
+        // Determine output paths
+        let (private_path, public_path) = if let Some(base_path) = output_path {
+            let private_path = base_path.clone();
+            let public_path = base_path.with_extension("pub");
+            (private_path, public_path)
+        } else {
+            // Use default paths in ~/.ssh
+            let key_name = match algorithm {
+                KeyAlgorithm::Rsa => "id_rsa_sf_cli",
+                KeyAlgorithm::EcdsaP256 => "id_ecdsa_sf_cli", 
+                KeyAlgorithm::Ed25519 => "id_ed25519_sf_cli",
+            };
+            let private_path = self.ssh_dir.join(key_name);
+            let public_path = self.ssh_dir.join(format!("{}.pub", key_name));
+            (private_path, public_path)
+        };
+
+        // Create SSH directory if it doesn't exist
+        if let Some(parent) = private_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Build ssh-keygen command
+        let mut cmd = Command::new("ssh-keygen");
+        cmd.arg("-t").arg(key_type)
+           .arg("-f").arg(&private_path)
+           .arg("-N").arg("") // No passphrase
+           .arg("-q"); // Quiet mode
+
+        // Add key size for RSA
+        if algorithm == KeyAlgorithm::Rsa {
+            let bits = key_size.unwrap_or(3072);
+            if bits < 2048 {
+                return Err(SshKeyError::KeyGenerationFailed(
+                    "RSA key size must be at least 2048 bits".to_string()
+                ));
+            }
+            cmd.arg("-b").arg(bits.to_string());
+        }
+
+        // Add key size for ECDSA (only 256 is supported for P-256)
+        if algorithm == KeyAlgorithm::EcdsaP256 {
+            cmd.arg("-b").arg("256");
+        }
+
+        // Add comment
+        if let Some(comment_str) = comment {
+            cmd.arg("-C").arg(comment_str);
+        } else {
+            cmd.arg("-C").arg("sf-cli-generated");
+        }
+
+        println!("🔑 Generating {} key pair...", algorithm);
+        
+        // Execute ssh-keygen
+        let output = cmd.output()
+            .map_err(|e| SshKeyError::KeyGenerationFailed(format!("Failed to execute ssh-keygen: {}", e)))?;
+
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(SshKeyError::KeyGenerationFailed(
+                format!("ssh-keygen failed: {}", error_msg)
+            ));
+        }
+
+        // Verify that both files were created
+        if !private_path.exists() {
+            return Err(SshKeyError::KeyGenerationFailed(
+                format!("Private key file was not created: {}", private_path.display())
+            ));
+        }
+        if !public_path.exists() {
+            return Err(SshKeyError::KeyGenerationFailed(
+                format!("Public key file was not created: {}", public_path.display())
+            ));
+        }
+
+        println!("✅ {} key pair generated successfully:", algorithm);
+        println!("   Private key: {}", private_path.display());
+        println!("   Public key:  {}", public_path.display());
+
+        Ok((private_path, public_path))
     }
 }
 
