@@ -3,9 +3,9 @@
 use crate::{
     compression::{CompressionEngine, CompressionError},
     crypto::{CryptoEngine, CryptoError, FileMetadata},
+    hybrid_crypto::{HybridCryptoEngine, HybridCryptoError},
     models::{OperationParams, OperationResult, OperationType, TargetType},
     progress::ProgressTracker,
-    ssh_keys::{SshKeyDiscovery, SshKeyError},
 };
 use std::{
     fs::{self, File},
@@ -21,6 +21,8 @@ pub enum FileOperationError {
     IoError(#[from] io::Error),
     #[error("Crypto error: {0}")]
     CryptoError(#[from] CryptoError),
+    #[error("Hybrid crypto error: {0}")]
+    HybridCryptoError(#[from] HybridCryptoError),
     #[error("Compression error: {0}")]
     CompressionError(#[from] CompressionError),
     #[error("Invalid path: {0}")]
@@ -34,6 +36,7 @@ pub enum FileOperationError {
 /// File operations engine
 pub struct FileOperator {
     crypto: CryptoEngine,
+    hybrid_crypto: HybridCryptoEngine,
     compression: CompressionEngine,
 }
 
@@ -48,6 +51,7 @@ impl FileOperator {
     pub fn new() -> Self {
         Self {
             crypto: CryptoEngine::new(),
+            hybrid_crypto: HybridCryptoEngine::new(),
             compression: CompressionEngine::new(),
         }
     }
@@ -125,54 +129,19 @@ impl FileOperator {
                 }
             }
             OperationType::HybridEncrypt => {
-                // Display helpful message about SSH keys and show discovered keys
-                println!("🔑 Hybrid Encryption Mode");
-                println!("=========================");
-                
-                // Try to discover SSH keys
-                match SshKeyDiscovery::new().discover_keys() {
-                    Ok(keys) => {
-                        println!("✅ Found {} SSH public key(s):", keys.len());
-                        for (i, key) in keys.iter().enumerate() {
-                            println!("  {}. {}", i + 1, key.display_name());
-                        }
-                        println!("\n⚠️  Note: Hybrid encryption implementation is in progress.");
-                        println!("📝 The infrastructure is ready but requires SSH key format conversion.");
-                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to ensure you have RSA keys available.");
-                        
-                        OperationResult::failure(
-                            source.clone(),
-                            params.operation.clone(),
-                            "Hybrid encryption core implementation pending - SSH key integration in progress".to_string(),
-                        )
-                    }
-                    Err(SshKeyError::NoSshDirectory) => {
-                        println!("❌ No SSH directory found (~/.ssh)");
-                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to generate SSH keys first");
-                        
-                        OperationResult::failure(
-                            source.clone(),
-                            params.operation.clone(),
-                            "No SSH directory found. Generate SSH keys with: ssh-keygen -t rsa -b 2048".to_string(),
-                        )
-                    }
-                    Err(SshKeyError::NoPublicKeysFound) => {
-                        println!("❌ No public keys found in ~/.ssh");
-                        println!("🔧 Run 'ssh-keygen -t rsa -b 2048' to generate SSH keys");
-                        
-                        OperationResult::failure(
-                            source.clone(),
-                            params.operation.clone(),
-                            "No public keys found. Generate SSH keys with: ssh-keygen -t rsa -b 2048".to_string(),
-                        )
-                    }
-                    Err(e) => {
-                        OperationResult::failure(
-                            source.clone(),
-                            params.operation.clone(),
-                            format!("SSH key discovery error: {}", e),
-                        )
-                    }
+                match self.hybrid_encrypt_file(source, &destination, params).await {
+                    Ok(bytes_processed) => OperationResult::success(
+                        source.clone(),
+                        destination,
+                        bytes_processed,
+                        params.operation.clone(),
+                        params.compress,
+                    ),
+                    Err(e) => OperationResult::failure(
+                        source.clone(),
+                        params.operation.clone(),
+                        e.to_string(),
+                    ),
                 }
             }
             OperationType::HybridDecrypt => {
@@ -320,6 +289,74 @@ impl FileOperator {
             progress.inc(file_size);
             progress.finish("Encryption complete");
         }
+
+        // Delete source file if requested
+        if params.delete_source {
+            fs::remove_file(source)?;
+        }
+
+        Ok(encrypted_data.len() as u64)
+    }
+
+    /// Encrypt a single file using hybrid encryption
+    async fn hybrid_encrypt_file(
+        &self,
+        source: &Path,
+        destination: &Path,
+        params: &OperationParams,
+    ) -> Result<u64, FileOperationError> {
+        // Display helpful message about SSH keys and show discovered keys
+        println!("🔑 Hybrid Encryption Mode");
+        println!("=========================");
+        
+        let file_size = fs::metadata(source)?.len();
+        let progress = if params.show_progress {
+            Some(ProgressTracker::new(file_size, "Hybrid Encrypting"))
+        } else {
+            None
+        };
+
+        let mut input = BufReader::new(File::open(source)?);
+        let mut file_data = Vec::new();
+
+        // Read entire file
+        input.read_to_end(&mut file_data)?;
+
+        // Apply compression if requested
+        let data_to_encrypt = if params.compress {
+            progress.as_ref().map(|p| p.set_message("Compressing..."));
+            self.compression.compress(&file_data)?
+        } else {
+            file_data.clone()
+        };
+
+        // Create metadata
+        let metadata = FileMetadata::from_file(source, &file_data, params.compress);
+
+        // Encrypt the data using hybrid encryption
+        progress.as_ref().map(|p| p.set_message("Hybrid encrypting..."));
+        let encrypted_data = self.hybrid_crypto.encrypt(&data_to_encrypt, params.public_key_path.as_deref(), metadata)?;
+        
+        // Create destination with .hsf extension
+        let final_destination = if destination.extension().is_none() {
+            destination.with_extension("hsf")
+        } else {
+            destination.to_path_buf()
+        };
+        
+        // Write to destination
+        let mut output = BufWriter::new(File::create(&final_destination)?);
+        output.write_all(&encrypted_data)?;
+        output.flush()?;
+
+        if let Some(progress) = &progress {
+            progress.inc(file_size);
+            progress.finish("Hybrid encryption complete");
+        }
+
+        // Show success message
+        println!("✅ Successfully encrypted file using hybrid encryption");
+        println!("📁 Output: {}", final_destination.display());
 
         // Delete source file if requested
         if params.delete_source {

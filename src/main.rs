@@ -4,7 +4,6 @@ use sf_cli::{
     models::{OperationParams, OperationType, TargetType},
     tui::App,
     watch::{FileWatcher, WatchConfig},
-    ssh_keys::SshKeyDiscovery,
 };
 use std::path::PathBuf;
 
