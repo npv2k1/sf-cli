@@ -2,7 +2,7 @@
 
 use crate::{
     crypto::{CryptoEngine, CryptoError, FileMetadata},
-    ssh_keys::{HybridPublicKey, KeyAlgorithm, SshKeyDiscovery, SshKeyError},
+    ssh_keys::{HybridPublicKey, HybridPrivateKey, KeyAlgorithm, SshKeyDiscovery, SshKeyError},
 };
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
@@ -10,7 +10,7 @@ use aes_gcm::{
 };
 use base64::{Engine as _, engine::general_purpose};
 use rand::RngCore;
-use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
+use rsa::{Pkcs1v15Encrypt, RsaPublicKey, RsaPrivateKey};
 use p256::{
     ecdh::EphemeralSecret,
     PublicKey as P256PublicKey,
@@ -82,6 +82,7 @@ impl HybridHeader {
         let alg_byte = match self.key_algorithm {
             KeyAlgorithm::Rsa => 0x01,
             KeyAlgorithm::EcdsaP256 => 0x02,
+            KeyAlgorithm::Ed25519 => 0x03,
         };
         bytes.push(alg_byte);
         
@@ -118,6 +119,7 @@ impl HybridHeader {
         let key_algorithm = match alg_byte {
             0x01 => KeyAlgorithm::Rsa,
             0x02 => KeyAlgorithm::EcdsaP256,
+            0x03 => KeyAlgorithm::Ed25519,
             _ => return Err(HybridCryptoError::UnsupportedAlgorithm(format!("Unknown algorithm byte: {}", alg_byte))),
         };
         
@@ -422,6 +424,11 @@ impl HybridCryptoEngine {
         let encrypted_session_key = match public_key.algorithm {
             KeyAlgorithm::Rsa => self.encrypt_session_key_rsa(&session_key, &public_key)?,
             KeyAlgorithm::EcdsaP256 => self.encrypt_session_key_ecdsa(&session_key, &public_key)?,
+            KeyAlgorithm::Ed25519 => {
+                return Err(HybridCryptoError::UnsupportedAlgorithm(
+                    "Ed25519 encryption not yet implemented".to_string()
+                ));
+            }
         };
 
         // Encrypt data with AES-256-GCM using session key
@@ -450,19 +457,159 @@ impl HybridCryptoEngine {
         Ok(result)
     }
 
-    /// Placeholder for hybrid decryption (requires private key handling)
+    /// Hybrid decryption functionality
     pub fn decrypt(
         &self,
-        _encrypted_data: &[u8],
-        _private_key_path: Option<&Path>,
+        encrypted_data: &[u8],
+        private_key_path: Option<&Path>,
     ) -> Result<(Vec<u8>, FileMetadata), HybridCryptoError> {
-        // This is a placeholder implementation
-        // Real implementation would need private key handling
-        // For now, return an error
-        Err(HybridCryptoError::EcdsaError(
-            "Hybrid decryption not yet implemented - requires private key support".to_string()
-        ))
+        // Parse the header first
+        let (header, header_size) = HybridHeader::from_bytes(encrypted_data)?;
+        
+        // The remaining data is the encrypted content
+        let ciphertext = &encrypted_data[header_size..];
+        
+        // Discover or load private key
+        let private_key = match private_key_path {
+            Some(path) => {
+                println!("🔑 Using private key from: {}", path.display());
+                self.ssh_discovery.load_private_key_from_path(path)?
+            },
+            None => {
+                println!("🔍 Auto-discovering private key...");
+                self.ssh_discovery.get_default_private_key()?
+            },
+        };
+        
+        // Verify that the private key algorithm matches the header
+        if private_key.algorithm != header.key_algorithm {
+            return Err(HybridCryptoError::UnsupportedAlgorithm(
+                format!("Private key algorithm ({}) does not match encrypted file algorithm ({})",
+                    private_key.algorithm, header.key_algorithm)
+            ));
+        }
+        
+        println!("🔓 Decrypting with key: {}", private_key.display_name());
+        
+        // Decrypt session key using private key
+        let session_key = match header.key_algorithm {
+            KeyAlgorithm::Rsa => self.decrypt_session_key_rsa(&header.encrypted_session_key, &private_key)?,
+            KeyAlgorithm::EcdsaP256 => self.decrypt_session_key_ecdsa(&header.encrypted_session_key, &private_key)?,
+            KeyAlgorithm::Ed25519 => {
+                return Err(HybridCryptoError::UnsupportedAlgorithm(
+                    "Ed25519 decryption not yet implemented".to_string()
+                ));
+            }
+        };
+        
+        // Decrypt data with AES-256-GCM using session key
+        let cipher = Aes256Gcm::new_from_slice(&session_key)
+            .map_err(|e| HybridCryptoError::CryptoError(CryptoError::DecryptionFailed(e.to_string())))?;
+        
+        let nonce_obj = Nonce::from_slice(&header.nonce);
+        let plaintext = cipher
+            .decrypt(nonce_obj, ciphertext)
+            .map_err(|e| HybridCryptoError::CryptoError(CryptoError::DecryptionFailed(e.to_string())))?;
+
+        Ok((plaintext, header.metadata))
     }
+
+    /// Decrypt session key with RSA private key
+    fn decrypt_session_key_rsa(
+        &self,
+        encrypted_session_key: &[u8],
+        private_key: &HybridPrivateKey,
+    ) -> Result<[u8; SESSION_KEY_SIZE], HybridCryptoError> {
+        // Convert SSH private key to RSA format
+        let _openssh_str = private_key.ssh_key.to_openssh(ssh_key::LineEnding::LF)
+            .map_err(|e| HybridCryptoError::SshKeyError(SshKeyError::SshKeyError(e)))?;
+        
+        // For SSH RSA private keys, we need to extract the components
+        let ssh_private_key = &private_key.ssh_key;
+        
+        // Get the RSA key data from the SSH private key
+        // We'll use the ssh-key crate's built-in conversion capabilities
+        match ssh_private_key.key_data() {
+            ssh_key::private::KeypairData::Rsa(rsa_keypair) => {
+                // Extract RSA components
+                let n = rsa::BigUint::from_bytes_be(rsa_keypair.public.n.as_bytes());
+                let e = rsa::BigUint::from_bytes_be(rsa_keypair.public.e.as_bytes());
+                let d = rsa::BigUint::from_bytes_be(rsa_keypair.private.d.as_bytes());
+                let primes = vec![
+                    rsa::BigUint::from_bytes_be(rsa_keypair.private.p.as_bytes()),
+                    rsa::BigUint::from_bytes_be(rsa_keypair.private.q.as_bytes()),
+                ];
+                
+                // Create RSA private key
+                let rsa_private_key = RsaPrivateKey::from_components(n, e, d, primes)
+                    .map_err(|e| HybridCryptoError::RsaError(e))?;
+                
+                // Decrypt session key using PKCS#1 v1.5 padding
+                let decrypted_key = rsa_private_key
+                    .decrypt(Pkcs1v15Encrypt, encrypted_session_key)
+                    .map_err(|e| HybridCryptoError::RsaError(e))?;
+                
+                if decrypted_key.len() != SESSION_KEY_SIZE {
+                    return Err(HybridCryptoError::InvalidSessionKeyLength);
+                }
+                
+                let mut session_key = [0u8; SESSION_KEY_SIZE];
+                session_key.copy_from_slice(&decrypted_key);
+                Ok(session_key)
+            }
+            _ => Err(HybridCryptoError::UnsupportedAlgorithm(
+                "Expected RSA private key".to_string()
+            ))
+        }
+    }
+
+    /// Decrypt session key with ECDSA P-256 private key using ECDH
+    fn decrypt_session_key_ecdsa(
+        &self,
+        encrypted_data: &[u8],
+        private_key: &HybridPrivateKey,
+    ) -> Result<[u8; SESSION_KEY_SIZE], HybridCryptoError> {
+        // Extract ephemeral public key (33 bytes) + nonce (12 bytes) + encrypted session key
+        if encrypted_data.len() < 33 + 12 {
+            return Err(HybridCryptoError::InvalidFormat);
+        }
+        
+        let ephemeral_public_bytes = &encrypted_data[0..33];
+        let _key_nonce = &encrypted_data[33..45];
+        let _encrypted_session_key = &encrypted_data[45..];
+        
+        // Parse ephemeral public key
+        let _ephemeral_public = P256PublicKey::from_sec1_bytes(ephemeral_public_bytes)
+            .map_err(|e| HybridCryptoError::EcdsaError(format!("Invalid ephemeral public key: {}", e)))?;
+        
+        // Get our private key
+        match private_key.ssh_key.key_data() {
+            ssh_key::private::KeypairData::Ecdsa(_ecdsa_keypair) => {
+                // For now, return an error until we can properly access the private key
+                return Err(HybridCryptoError::EcdsaError(
+                    "ECDSA private key access needs to be implemented with correct field names".to_string()
+                ));
+            }
+            _ => Err(HybridCryptoError::UnsupportedAlgorithm(
+                "Expected ECDSA private key".to_string()
+            ))
+        }
+    }
+
+    /// Extract public key information from an encrypted file
+    pub fn extract_public_key_info(&self, encrypted_data: &[u8]) -> Result<(KeyAlgorithm, String), HybridCryptoError> {
+        let (header, _) = HybridHeader::from_bytes(encrypted_data)?;
+        
+        // Create a description of the key used for encryption
+        let key_description = match header.key_algorithm {
+            KeyAlgorithm::Rsa => "RSA public key".to_string(),
+            KeyAlgorithm::EcdsaP256 => "ECDSA P-256 public key".to_string(),
+            KeyAlgorithm::Ed25519 => "Ed25519 public key".to_string(),
+        };
+        
+        Ok((header.key_algorithm, key_description))
+    }
+
 }
 
 #[cfg(test)]
