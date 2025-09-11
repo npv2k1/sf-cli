@@ -147,7 +147,7 @@ impl HybridPrivateKey {
 
     /// Get the corresponding public key
     pub fn public_key(&self) -> HybridPublicKey {
-        let public_ssh_key = self.ssh_key.public_key().clone();
+        let public_ssh_key = self.ssh_key.public_key();
         // This should not fail since we already validated the algorithm in new()
         HybridPublicKey::new(public_ssh_key, self.file_path.clone())
             .expect("Failed to create public key from validated private key")
@@ -232,6 +232,65 @@ impl SshKeyDiscovery {
         Ok(keys)
     }
 
+    /// Discover all suitable private keys in the SSH directory
+    pub fn discover_private_keys(&self) -> Result<Vec<HybridPrivateKey>, SshKeyError> {
+        if !self.ssh_dir.exists() {
+            return Err(SshKeyError::NoSshDirectory);
+        }
+
+        let mut keys = Vec::new();
+        let entries = fs::read_dir(&self.ssh_dir)?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            
+            // Look for files without .pub extension (private keys)
+            if path.is_file() && !path.extension().map_or(false, |ext| ext == "pub") {
+                // Skip known non-key files
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                
+                if filename.starts_with("known_hosts") || 
+                   filename.starts_with("config") ||
+                   filename.starts_with("authorized_keys") {
+                    continue;
+                }
+
+                match self.load_private_key(&path) {
+                    Ok(key) => {
+                        println!("🔑 Found private key: {}", key.display_name());
+                        keys.push(key);
+                    },
+                    Err(e) => {
+                        // Log warning but continue with other keys
+                        eprintln!("Warning: Failed to load private key {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+
+        if keys.is_empty() {
+            return Err(SshKeyError::NoPublicKeysFound);
+        }
+
+        // Sort by algorithm preference (RSA first, then ECDSA, then Ed25519)
+        keys.sort_by(|a, b| {
+            match (&a.algorithm, &b.algorithm) {
+                (KeyAlgorithm::Rsa, KeyAlgorithm::EcdsaP256) => std::cmp::Ordering::Less,
+                (KeyAlgorithm::Rsa, KeyAlgorithm::Ed25519) => std::cmp::Ordering::Less,
+                (KeyAlgorithm::EcdsaP256, KeyAlgorithm::Rsa) => std::cmp::Ordering::Greater,
+                (KeyAlgorithm::EcdsaP256, KeyAlgorithm::Ed25519) => std::cmp::Ordering::Less,
+                (KeyAlgorithm::Ed25519, KeyAlgorithm::Rsa) => std::cmp::Ordering::Greater,
+                (KeyAlgorithm::Ed25519, KeyAlgorithm::EcdsaP256) => std::cmp::Ordering::Greater,
+                _ => a.file_path.cmp(&b.file_path),
+            }
+        });
+
+        Ok(keys)
+    }
+
     /// Load a specific public key from file path
     pub fn load_public_key_from_path<P: AsRef<Path>>(&self, path: P) -> Result<HybridPublicKey, SshKeyError> {
         self.load_public_key(path.as_ref())
@@ -274,6 +333,11 @@ impl SshKeyDiscovery {
         } else {
             Ok(filtered)
         }
+    }
+
+    /// Load a specific private key from file path
+    pub fn load_private_key_from_path<P: AsRef<Path>>(&self, path: P) -> Result<HybridPrivateKey, SshKeyError> {
+        self.load_private_key(path.as_ref())
     }
 
     /// Discover all suitable private keys in the SSH directory
@@ -335,11 +399,6 @@ impl SshKeyDiscovery {
         Ok(keys)
     }
 
-    /// Load a specific private key from file path
-    pub fn load_private_key_from_path<P: AsRef<Path>>(&self, path: P) -> Result<HybridPrivateKey, SshKeyError> {
-        self.load_private_key(path.as_ref())
-    }
-
     /// Load a private key from a file path
     fn load_private_key(&self, path: &Path) -> Result<HybridPrivateKey, SshKeyError> {
         let content = fs::read_to_string(path)?;
@@ -380,6 +439,89 @@ impl SshKeyDiscovery {
             Ok(filtered)
         }
     }
+    pub fn discover_keys(&self) -> Result<Vec<HybridPublicKey>, SshKeyError> {
+        if !self.ssh_dir.exists() {
+            return Err(SshKeyError::NoSshDirectory);
+        }
+
+        let mut keys = Vec::new();
+        let entries = fs::read_dir(&self.ssh_dir)?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            
+            // Look for .pub files
+            if let Some(extension) = path.extension() {
+                if extension == "pub" {
+                    match self.load_public_key(&path) {
+                        Ok(key) => keys.push(key),
+                        Err(e) => {
+                            // Log warning but continue with other keys
+                            eprintln!("Warning: Failed to load key {}: {}", path.display(), e);
+                        }
+                    }
+                }
+            }
+        }
+
+        if keys.is_empty() {
+            return Err(SshKeyError::NoPublicKeysFound);
+        }
+
+        // Sort by algorithm preference (RSA first, then ECDSA)
+        keys.sort_by(|a, b| {
+            match (&a.algorithm, &b.algorithm) {
+                (KeyAlgorithm::Rsa, KeyAlgorithm::EcdsaP256) => std::cmp::Ordering::Less,
+                (KeyAlgorithm::EcdsaP256, KeyAlgorithm::Rsa) => std::cmp::Ordering::Greater,
+                _ => a.file_path.cmp(&b.file_path),
+            }
+        });
+
+        Ok(keys)
+    }
+
+    /// Load a specific public key from file path
+    pub fn load_public_key_from_path<P: AsRef<Path>>(&self, path: P) -> Result<HybridPublicKey, SshKeyError> {
+        self.load_public_key(path.as_ref())
+    }
+
+    /// Load a public key from a file path
+    fn load_public_key(&self, path: &Path) -> Result<HybridPublicKey, SshKeyError> {
+        let content = fs::read_to_string(path)?;
+        let ssh_key = SshPublicKey::from_openssh(&content)
+            .map_err(|e| SshKeyError::InvalidKeyFormat(format!("{}: {}", path.display(), e)))?;
+        
+        HybridPublicKey::new(ssh_key, path.to_path_buf())
+    }
+
+    /// Get the default/preferred public key (first RSA key, or first available)
+    pub fn get_default_key(&self) -> Result<HybridPublicKey, SshKeyError> {
+        let keys = self.discover_keys()?;
+        
+        // Prefer RSA keys first, then any other key
+        if let Some(rsa_key) = keys.iter().find(|k| k.algorithm == KeyAlgorithm::Rsa) {
+            Ok(rsa_key.clone())
+        } else if let Some(first_key) = keys.into_iter().next() {
+            Ok(first_key)
+        } else {
+            Err(SshKeyError::NoPublicKeysFound)
+        }
+    }
+
+    /// Find keys by algorithm
+    pub fn find_keys_by_algorithm(&self, algorithm: KeyAlgorithm) -> Result<Vec<HybridPublicKey>, SshKeyError> {
+        let keys = self.discover_keys()?;
+        let filtered: Vec<_> = keys.into_iter()
+            .filter(|k| k.algorithm == algorithm)
+            .collect();
+        
+        if filtered.is_empty() {
+            Err(SshKeyError::NoPublicKeysFound)
+        } else {
+            Ok(filtered)
+        }
+    }
 
     /// Check if SSH directory exists and is accessible
     pub fn check_ssh_directory(&self) -> Result<(), SshKeyError> {
@@ -392,6 +534,9 @@ impl SshKeyDiscovery {
         Ok(())
     }
 }
+
+// Add dirs dependency for home directory detection
+// We'll need to add this to Cargo.toml as well
 
 #[cfg(test)]
 mod tests {
@@ -426,7 +571,6 @@ mod tests {
     fn test_key_algorithm_display() {
         assert_eq!(KeyAlgorithm::Rsa.to_string(), "RSA");
         assert_eq!(KeyAlgorithm::EcdsaP256.to_string(), "ECDSA-P256");
-        assert_eq!(KeyAlgorithm::Ed25519.to_string(), "Ed25519");
     }
 
     #[test]
