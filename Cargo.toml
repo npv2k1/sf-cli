@@ -6,6 +6,16 @@ authors = ["npv2k1"]
 description = "Secure file encryption CLI/TUI tool with password protection"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/npv2k1/sf-cli"
+homepage = "https://github.com/npv2k1/sf-cli"
+readme = "README.md"
+keywords = ["encryption", "security", "cli", "tui", "file"]
+categories = ["cryptography", "command-line-utilities"]
+exclude = [
+    ".vscode/",
+    ".github/copilot-instructions.md",
+    ".github/validate-workflows.sh",
+    ".github/CRATES_IO_SETUP.md"
+]
 
 [dependencies]
 # CLI and TUI
