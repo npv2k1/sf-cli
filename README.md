@@ -338,14 +338,3 @@ This project is licensed under either of
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
-
-## Changelog
-
-### v0.1.0
-- Initial release
-- AES-256-GCM encryption with Argon2 key derivation
-- File and directory encryption/decryption
-- gzip compression support
-- CLI and TUI interfaces
-- Progress tracking for large files
-- Comprehensive test suite
