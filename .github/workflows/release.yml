@@ -88,19 +88,41 @@ jobs:
         git push origin :refs/tags/latest || true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Make artifacts executable
+      run: |
+        chmod +x sf-cli-linux-x86_64/sf-cli || true
+        chmod +x sf-cli-macos-x86_64/sf-cli || true
     
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          sf-cli-linux-x86_64/sf-cli
-          sf-cli-windows-x86_64.exe/sf-cli.exe
-          sf-cli-macos-x86_64/sf-cli
-        generate_release_notes: true
-        tag_name: ${{ steps.release_info.outputs.tag_name }}
-        name: ${{ steps.release_info.outputs.release_name }}
-        prerelease: ${{ steps.release_info.outputs.prerelease == 'true' }}
-        draft: false
+    - name: Create Release with GitHub CLI
+      run: |
+        # Create release notes file
+        gh api repos/${{ github.repository }}/releases/generate-notes \
+          -F tag_name=${{ steps.release_info.outputs.tag_name }} \
+          --jq .body > RELEASE_NOTES.md
+        
+        # Create the release
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          gh release create ${{ steps.release_info.outputs.tag_name }} \
+            --title "${{ steps.release_info.outputs.release_name }}" \
+            --notes-file RELEASE_NOTES.md
+        else
+          # Create a tag for the latest release
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -f latest
+          git push -f origin latest
+          
+          gh release create latest \
+            --title "${{ steps.release_info.outputs.release_name }}" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+        fi
+        
+        # Upload all artifacts
+        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-linux-x86_64/sf-cli --clobber
+        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-windows-x86_64.exe/sf-cli.exe --clobber
+        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-macos-x86_64/sf-cli --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
