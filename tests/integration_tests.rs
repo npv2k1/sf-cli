@@ -24,8 +24,9 @@ async fn test_file_encryption_integration() {
         OperationType::Encrypt,
         TargetType::File,
         source_file.clone(),
-    ).with_destination(encrypted_file.clone())
-     .with_progress(false);
+    )
+    .with_destination(encrypted_file.clone())
+    .with_progress(false);
 
     let result = operator.process(&encrypt_params, password).await;
     assert!(result.success, "Encryption failed: {:?}", result.error);
@@ -33,12 +34,10 @@ async fn test_file_encryption_integration() {
 
     // Test decryption
     let decrypted_file = temp_dir.path().join("test_decrypted.txt");
-    let decrypt_params = OperationParams::new(
-        OperationType::Decrypt,
-        TargetType::File,
-        encrypted_file,
-    ).with_destination(decrypted_file.clone())
-     .with_progress(false);
+    let decrypt_params =
+        OperationParams::new(OperationType::Decrypt, TargetType::File, encrypted_file)
+            .with_destination(decrypted_file.clone())
+            .with_progress(false);
 
     let result = operator.process(&decrypt_params, password).await;
     assert!(result.success, "Decryption failed: {:?}", result.error);
@@ -69,11 +68,16 @@ async fn test_directory_encryption_integration() {
         OperationType::Encrypt,
         TargetType::Directory,
         source_dir.clone(),
-    ).with_destination(encrypted_file.clone())
-     .with_progress(false);
+    )
+    .with_destination(encrypted_file.clone())
+    .with_progress(false);
 
     let result = operator.process(&encrypt_params, password).await;
-    assert!(result.success, "Directory encryption failed: {:?}", result.error);
+    assert!(
+        result.success,
+        "Directory encryption failed: {:?}",
+        result.error
+    );
     assert!(encrypted_file.exists());
 
     // Test directory decryption
@@ -82,20 +86,25 @@ async fn test_directory_encryption_integration() {
         OperationType::Decrypt,
         TargetType::Directory,
         encrypted_file,
-    ).with_destination(decrypted_dir.clone())
-     .with_progress(false);
+    )
+    .with_destination(decrypted_dir.clone())
+    .with_progress(false);
 
     let result = operator.process(&decrypt_params, password).await;
-    assert!(result.success, "Directory decryption failed: {:?}", result.error);
+    assert!(
+        result.success,
+        "Directory decryption failed: {:?}",
+        result.error
+    );
     assert!(decrypted_dir.exists());
 
     // Verify files exist and have correct content
     assert!(decrypted_dir.join("file1.txt").exists());
     assert!(decrypted_dir.join("file2.txt").exists());
-    
+
     let content1 = fs::read(decrypted_dir.join("file1.txt")).unwrap();
     let content2 = fs::read(decrypted_dir.join("file2.txt")).unwrap();
-    
+
     assert_eq!(content1, b"Content 1");
     assert_eq!(content2, b"Content 2");
 }
@@ -111,22 +120,18 @@ async fn test_wrong_password_integration() {
 
     let operator = FileOperator::new();
 
-    let encrypt_params = OperationParams::new(
-        OperationType::Encrypt,
-        TargetType::File,
-        source_file,
-    ).with_destination(encrypted_file.clone())
-     .with_progress(false);
+    let encrypt_params =
+        OperationParams::new(OperationType::Encrypt, TargetType::File, source_file)
+            .with_destination(encrypted_file.clone())
+            .with_progress(false);
 
     let result = operator.process(&encrypt_params, "correct_password").await;
     assert!(result.success);
 
     // Try to decrypt with wrong password
-    let decrypt_params = OperationParams::new(
-        OperationType::Decrypt,
-        TargetType::File,
-        encrypted_file,
-    ).with_progress(false);
+    let decrypt_params =
+        OperationParams::new(OperationType::Decrypt, TargetType::File, encrypted_file)
+            .with_progress(false);
 
     let result = operator.process(&decrypt_params, "wrong_password").await;
     assert!(!result.success);

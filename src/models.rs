@@ -76,11 +76,7 @@ pub struct OperationParams {
 
 impl OperationParams {
     /// Create new operation parameters
-    pub fn new(
-        operation: OperationType,
-        target_type: TargetType,
-        source: PathBuf,
-    ) -> Self {
+    pub fn new(operation: OperationType, target_type: TargetType, source: PathBuf) -> Self {
         Self {
             operation,
             target_type,
@@ -88,7 +84,7 @@ impl OperationParams {
             destination: None,
             compress: false,
             show_progress: true,
-            buffer_size: 64 * 1024, // 64KB
+            buffer_size: 64 * 1024,  // 64KB
             preserve_filename: true, // Default to preserving filenames
             delete_source: false,    // Default to keeping source files
             verify_checksum: true,   // Default to verifying checksums
@@ -160,11 +156,13 @@ impl OperationParams {
                 OperationType::Encrypt => {
                     if self.preserve_filename {
                         // Keep original filename, just add .sf extension
-                        let original_ext = self.source.extension()
+                        let original_ext = self
+                            .source
+                            .extension()
                             .and_then(|s| s.to_str())
                             .unwrap_or("")
                             .to_string();
-                        
+
                         if self.compress {
                             if original_ext.is_empty() {
                                 self.source.with_extension("sf")
@@ -190,11 +188,13 @@ impl OperationParams {
                 OperationType::HybridEncrypt => {
                     // Use .hsf (hybrid secure file) extension
                     if self.preserve_filename {
-                        let original_ext = self.source.extension()
+                        let original_ext = self
+                            .source
+                            .extension()
                             .and_then(|s| s.to_str())
                             .unwrap_or("")
                             .to_string();
-                        
+
                         if original_ext.is_empty() {
                             self.source.with_extension("hsf")
                         } else {
@@ -311,11 +311,7 @@ impl OperationResult {
     }
 
     /// Create a failed operation result
-    pub fn failure(
-        source: PathBuf,
-        operation: OperationType,
-        error: String,
-    ) -> Self {
+    pub fn failure(source: PathBuf, operation: OperationType, error: String) -> Self {
         Self {
             success: false,
             source,

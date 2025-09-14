@@ -31,7 +31,10 @@ impl ProgressTracker {
         let bar = ProgressBar::new_spinner();
         bar.set_style(
             ProgressStyle::default_spinner()
-                .template(&format!("{} [{{elapsed_precise}}] {{spinner}} {{msg}}", operation))
+                .template(&format!(
+                    "{} [{{elapsed_precise}}] {{spinner}} {{msg}}",
+                    operation
+                ))
                 .unwrap(),
         );
         bar.enable_steady_tick(Duration::from_millis(100));
@@ -90,26 +93,26 @@ mod tests {
     #[test]
     fn test_progress_tracker() {
         let tracker = ProgressTracker::new(1000, "Testing");
-        
+
         // Simulate progress
         for _i in 0..10 {
             tracker.inc(100);
             thread::sleep(Duration::from_millis(10));
         }
-        
+
         tracker.finish("Complete");
     }
 
     #[test]
     fn test_spinner() {
         let tracker = ProgressTracker::new_spinner("Processing");
-        
+
         tracker.set_message("Working...");
         thread::sleep(Duration::from_millis(50));
-        
+
         tracker.set_message("Almost done...");
         thread::sleep(Duration::from_millis(50));
-        
+
         tracker.finish("Done");
     }
 }

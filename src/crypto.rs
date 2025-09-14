@@ -7,9 +7,9 @@ use aes_gcm::{
 use argon2::Argon2;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
+use std::path::Path;
 use thiserror::Error;
 use zeroize::Zeroize;
-use std::path::Path;
 
 /// Cryptographic errors
 #[derive(Error, Debug)]
@@ -82,7 +82,7 @@ impl FileMetadata {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         let mut hasher = Sha256::new();
         hasher.update(data);
         let checksum: [u8; CHECKSUM_SIZE] = hasher.finalize().into();
@@ -94,13 +94,13 @@ impl FileMetadata {
     pub fn to_bytes(&self) -> Vec<u8> {
         let filename_bytes = self.filename.as_bytes();
         let filename_len = filename_bytes.len() as u16;
-        
+
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&filename_len.to_le_bytes());
         bytes.extend_from_slice(filename_bytes);
         bytes.extend_from_slice(&self.checksum);
         bytes.push(if self.compressed { 1 } else { 0 });
-        
+
         bytes
     }
 
@@ -112,17 +112,17 @@ impl FileMetadata {
 
         let filename_len = u16::from_le_bytes([bytes[0], bytes[1]]) as usize;
         let required_size = 2 + filename_len + CHECKSUM_SIZE + 1;
-        
+
         if bytes.len() < required_size {
             return Err(CryptoError::InvalidFormat);
         }
 
         let filename = String::from_utf8(bytes[2..2 + filename_len].to_vec())
             .map_err(|_| CryptoError::InvalidFormat)?;
-        
+
         let mut checksum = [0u8; CHECKSUM_SIZE];
         checksum.copy_from_slice(&bytes[2 + filename_len..2 + filename_len + CHECKSUM_SIZE]);
-        
+
         let compressed = bytes[2 + filename_len + CHECKSUM_SIZE] != 0;
 
         Ok((Self::new(filename, checksum, compressed), required_size))
@@ -150,11 +150,15 @@ impl EncryptionHeader {
     pub fn new(metadata: FileMetadata) -> Self {
         let mut salt = [0u8; SALT_SIZE];
         let mut nonce = [0u8; NONCE_SIZE];
-        
+
         OsRng.fill_bytes(&mut salt);
         OsRng.fill_bytes(&mut nonce);
 
-        Self { salt, nonce, metadata }
+        Self {
+            salt,
+            nonce,
+            metadata,
+        }
     }
 
     /// Serialize header to bytes
@@ -162,12 +166,12 @@ impl EncryptionHeader {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.salt);
         bytes.extend_from_slice(&self.nonce);
-        
+
         let metadata_bytes = self.metadata.to_bytes();
         let metadata_len = metadata_bytes.len() as u32;
         bytes.extend_from_slice(&metadata_len.to_le_bytes());
         bytes.extend_from_slice(&metadata_bytes);
-        
+
         bytes
     }
 
@@ -180,7 +184,7 @@ impl EncryptionHeader {
 
         let mut salt = [0u8; SALT_SIZE];
         let mut nonce = [0u8; NONCE_SIZE];
-        
+
         salt.copy_from_slice(&bytes[..SALT_SIZE]);
         nonce.copy_from_slice(&bytes[SALT_SIZE..SALT_SIZE + NONCE_SIZE]);
 
@@ -197,10 +201,18 @@ impl EncryptionHeader {
             return Err(CryptoError::InvalidFormat);
         }
 
-        let (metadata, _) = FileMetadata::from_bytes(&bytes[metadata_start..metadata_start + metadata_len])?;
+        let (metadata, _) =
+            FileMetadata::from_bytes(&bytes[metadata_start..metadata_start + metadata_len])?;
         let total_size = metadata_start + metadata_len;
 
-        Ok((Self { salt, nonce, metadata }, total_size))
+        Ok((
+            Self {
+                salt,
+                nonce,
+                metadata,
+            },
+            total_size,
+        ))
     }
 }
 
@@ -224,7 +236,11 @@ impl CryptoEngine {
     }
 
     /// Derive a secure key from password and salt using Argon2
-    pub fn derive_key(&self, password: &str, salt: &[u8; SALT_SIZE]) -> Result<SecureKey, CryptoError> {
+    pub fn derive_key(
+        &self,
+        password: &str,
+        salt: &[u8; SALT_SIZE],
+    ) -> Result<SecureKey, CryptoError> {
         let mut key = [0u8; 32];
         self.argon2
             .hash_password_into(password.as_bytes(), salt, &mut key)
@@ -234,10 +250,15 @@ impl CryptoEngine {
     }
 
     /// Encrypt data with password and metadata
-    pub fn encrypt(&self, data: &[u8], password: &str, metadata: FileMetadata) -> Result<Vec<u8>, CryptoError> {
+    pub fn encrypt(
+        &self,
+        data: &[u8],
+        password: &str,
+        metadata: FileMetadata,
+    ) -> Result<Vec<u8>, CryptoError> {
         let header = EncryptionHeader::new(metadata);
         let key = self.derive_key(password, &header.salt)?;
-        
+
         let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
             .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
 
@@ -255,7 +276,11 @@ impl CryptoEngine {
     }
 
     /// Decrypt data with password, returning both data and metadata
-    pub fn decrypt(&self, encrypted_data: &[u8], password: &str) -> Result<(Vec<u8>, FileMetadata), CryptoError> {
+    pub fn decrypt(
+        &self,
+        encrypted_data: &[u8],
+        password: &str,
+    ) -> Result<(Vec<u8>, FileMetadata), CryptoError> {
         if encrypted_data.len() < SALT_SIZE + NONCE_SIZE + 4 {
             return Err(CryptoError::InvalidFormat);
         }
@@ -264,7 +289,7 @@ impl CryptoEngine {
         let ciphertext = &encrypted_data[header_size..];
 
         let key = self.derive_key(password, &header.salt)?;
-        
+
         let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
             .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
 
@@ -277,9 +302,13 @@ impl CryptoEngine {
     }
 
     /// Legacy decrypt method for backward compatibility
-    pub fn decrypt_legacy(&self, encrypted_data: &[u8], password: &str) -> Result<Vec<u8>, CryptoError> {
+    pub fn decrypt_legacy(
+        &self,
+        encrypted_data: &[u8],
+        password: &str,
+    ) -> Result<Vec<u8>, CryptoError> {
         const LEGACY_HEADER_SIZE: usize = SALT_SIZE + NONCE_SIZE;
-        
+
         if encrypted_data.len() < LEGACY_HEADER_SIZE {
             return Err(CryptoError::InvalidFormat);
         }
@@ -295,7 +324,7 @@ impl CryptoEngine {
                     encrypted_data[metadata_len_offset + 2],
                     encrypted_data[metadata_len_offset + 3],
                 ]) as usize;
-                
+
                 // If metadata length is unreasonably large, assume legacy format
                 metadata_len > 1024 || metadata_len_offset + 4 + metadata_len > encrypted_data.len()
             } else {
@@ -306,14 +335,14 @@ impl CryptoEngine {
         if is_legacy {
             let mut salt = [0u8; SALT_SIZE];
             let mut nonce = [0u8; NONCE_SIZE];
-            
+
             salt.copy_from_slice(&encrypted_data[..SALT_SIZE]);
             nonce.copy_from_slice(&encrypted_data[SALT_SIZE..LEGACY_HEADER_SIZE]);
-            
+
             let ciphertext = &encrypted_data[LEGACY_HEADER_SIZE..];
 
             let key = self.derive_key(password, &salt)?;
-            
+
             let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
                 .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
 
@@ -362,7 +391,7 @@ mod tests {
 
         let encrypted = engine.encrypt(data, password, metadata).unwrap();
         let result = engine.decrypt(&encrypted, wrong_password);
-        
+
         assert!(matches!(result, Err(CryptoError::InvalidPassword)));
     }
 
@@ -381,15 +410,15 @@ mod tests {
     #[test]
     fn test_file_metadata() {
         use std::path::Path;
-        
+
         let data = b"Test file content";
         let path = Path::new("test.txt");
         let metadata = FileMetadata::from_file(path, data, false);
-        
+
         assert_eq!(metadata.filename, "test.txt");
         assert!(!metadata.compressed);
         assert!(metadata.verify_checksum(data));
-        
+
         // Test serialization
         let bytes = metadata.to_bytes();
         let (recovered, size) = FileMetadata::from_bytes(&bytes).unwrap();
@@ -417,7 +446,7 @@ mod tests {
         // Test serialization/deserialization
         let bytes = header.to_bytes();
         let (deserialized, size) = EncryptionHeader::from_bytes(&bytes).unwrap();
-        
+
         assert_eq!(size, bytes.len());
         assert_eq!(header.salt, deserialized.salt);
         assert_eq!(header.nonce, deserialized.nonce);
@@ -431,7 +460,7 @@ mod tests {
         let key_bytes = [42u8; 32];
         let key = SecureKey::new(key_bytes);
         assert_eq!(key.as_bytes(), &key_bytes);
-        
+
         // Key should be zeroized when dropped
         drop(key);
         // Note: We can't test zeroization directly as the memory is freed

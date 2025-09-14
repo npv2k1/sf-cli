@@ -3,15 +3,15 @@
 //! A secure file encryption tool with password protection, supporting both
 //! command-line and terminal user interface modes.
 
-pub mod crypto;
 pub mod compression;
+pub mod crypto;
 pub mod file_ops;
-pub mod progress;
+pub mod hybrid_crypto;
 pub mod models;
+pub mod progress;
+pub mod ssh_keys;
 pub mod tui;
 pub mod watch;
-pub mod ssh_keys;
-pub mod hybrid_crypto;
 
 pub use models::*;
 

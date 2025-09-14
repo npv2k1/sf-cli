@@ -54,11 +54,7 @@ pub struct WatchConfig {
 
 impl WatchConfig {
     /// Create new watch configuration
-    pub fn new(
-        watch_dir: PathBuf,
-        operation: OperationType,
-        password: String,
-    ) -> Self {
+    pub fn new(watch_dir: PathBuf, operation: OperationType, password: String) -> Self {
         Self {
             watch_dir,
             target_dir: None,
@@ -128,7 +124,9 @@ impl WatchConfig {
         match self.operation {
             OperationType::Encrypt => {
                 // For encryption, avoid processing already encrypted files
-                !path_str.ends_with(".sf") && !path_str.ends_with(".sf.gz") && !path_str.ends_with(".hsf")
+                !path_str.ends_with(".sf")
+                    && !path_str.ends_with(".sf.gz")
+                    && !path_str.ends_with(".hsf")
             }
             OperationType::Decrypt => {
                 // For decryption, only process encrypted files
@@ -136,7 +134,9 @@ impl WatchConfig {
             }
             OperationType::HybridEncrypt => {
                 // For hybrid encryption, avoid processing already encrypted files
-                !path_str.ends_with(".sf") && !path_str.ends_with(".sf.gz") && !path_str.ends_with(".hsf")
+                !path_str.ends_with(".sf")
+                    && !path_str.ends_with(".sf.gz")
+                    && !path_str.ends_with(".hsf")
             }
             OperationType::HybridDecrypt => {
                 // For hybrid decryption, only process hybrid encrypted files
@@ -206,8 +206,10 @@ impl FileWatcher {
         }
 
         // Set up file system watcher
-        let (tx, rx): (Sender<notify::Result<Event>>, Receiver<notify::Result<Event>>) =
-            mpsc::channel();
+        let (tx, rx): (
+            Sender<notify::Result<Event>>,
+            Receiver<notify::Result<Event>>,
+        ) = mpsc::channel();
 
         let mut watcher = RecommendedWatcher::new(
             move |res| {
@@ -409,9 +411,7 @@ impl FileWatcher {
                         target_path.with_extension("decrypted")
                     }
                 }
-                OperationType::HybridEncrypt => {
-                    target_path.with_extension("hsf")
-                }
+                OperationType::HybridEncrypt => target_path.with_extension("hsf"),
                 OperationType::HybridDecrypt => {
                     let path_str = target_path.to_string_lossy();
                     if path_str.ends_with(".hsf") {
@@ -482,7 +482,7 @@ mod tests {
 
         // Should process regular files
         assert!(config.should_process_by_operation(Path::new("test.txt")));
-        
+
         // Should not process already encrypted files for encryption
         assert!(!config.should_process_by_operation(Path::new("test.sf")));
         assert!(!config.should_process_by_operation(Path::new("test.sf.gz")));
@@ -497,7 +497,7 @@ mod tests {
         // Should process encrypted files
         assert!(decrypt_config.should_process_by_operation(Path::new("test.sf")));
         assert!(decrypt_config.should_process_by_operation(Path::new("test.sf.gz")));
-        
+
         // Should not process regular files for decryption
         assert!(!decrypt_config.should_process_by_operation(Path::new("test.txt")));
     }
@@ -508,12 +508,13 @@ mod tests {
             PathBuf::from("/tmp"),
             OperationType::Encrypt,
             "password".to_string(),
-        ).with_extensions(vec!["txt".to_string(), "doc".to_string()]);
+        )
+        .with_extensions(vec!["txt".to_string(), "doc".to_string()]);
 
         // Should process specified extensions
         assert!(config.should_process_file(Path::new("test.txt")));
         assert!(config.should_process_file(Path::new("document.doc")));
-        
+
         // Should not process other extensions
         assert!(!config.should_process_file(Path::new("image.jpg")));
         assert!(!config.should_process_file(Path::new("video.mp4")));

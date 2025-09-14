@@ -17,11 +17,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use std::{
-    fs, io,
-    path::PathBuf,
-    collections::HashMap,
-};
+use std::{collections::HashMap, fs, io, path::PathBuf};
 
 /// File entry for display
 #[derive(Debug, Clone)]
@@ -36,11 +32,12 @@ pub struct FileEntry {
 impl FileEntry {
     pub fn new(path: PathBuf) -> io::Result<Self> {
         let metadata = fs::metadata(&path)?;
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        
+
         let is_directory = metadata.is_dir();
         let is_encrypted = if !is_directory {
             name.ends_with(".sf") || name.ends_with(".sf.gz")
@@ -126,10 +123,10 @@ enum AppMode {
     /// Search mode
     Search,
     /// Input password
-    InputPassword { 
-        operation: OperationType, 
-        files: Vec<PathBuf>, 
-        compress: bool 
+    InputPassword {
+        operation: OperationType,
+        files: Vec<PathBuf>,
+        compress: bool,
     },
     /// Processing files
     Processing {
@@ -170,7 +167,7 @@ impl App {
             selected_files: HashMap::new(),
             operation_progress: None,
         };
-        
+
         app.refresh_file_list();
         app
     }
@@ -179,7 +176,7 @@ impl App {
     fn refresh_file_list(&mut self) {
         self.files.clear();
         self.selected_files.clear();
-        
+
         // Add parent directory entry if not at root
         if let Some(parent) = self.current_dir.parent() {
             self.files.push(FileEntry {
@@ -201,12 +198,10 @@ impl App {
                 .collect();
 
             // Sort: directories first, then by name
-            file_entries.sort_by(|a, b| {
-                match (a.is_directory, b.is_directory) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.name.cmp(&b.name),
-                }
+            file_entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.cmp(&b.name),
             });
 
             self.files.extend(file_entries);
@@ -270,7 +265,9 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(_, file)| {
-                file.name.to_lowercase().contains(&self.search_query.to_lowercase())
+                file.name
+                    .to_lowercase()
+                    .contains(&self.search_query.to_lowercase())
             })
             .collect()
     }
@@ -299,7 +296,10 @@ impl App {
     }
 
     /// Main application loop
-    async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_app<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         loop {
             terminal.draw(|f| self.ui(f))?;
 
@@ -422,8 +422,13 @@ impl App {
 
         if self.settings.use_global_password && self.settings.global_password.is_some() {
             // Use global password
-            self.process_files(operation, file_paths, compress, 
-                              self.settings.global_password.as_ref().unwrap().clone()).await;
+            self.process_files(
+                operation,
+                file_paths,
+                compress,
+                self.settings.global_password.as_ref().unwrap().clone(),
+            )
+            .await;
         } else {
             // Ask for password
             self.mode = AppMode::InputPassword {
@@ -432,8 +437,14 @@ impl App {
                 compress,
             };
             self.input.clear();
-            self.status = format!("Enter password for {} operation:", 
-                                if operation == OperationType::Encrypt { "encryption" } else { "decryption" });
+            self.status = format!(
+                "Enter password for {} operation:",
+                if operation == OperationType::Encrypt {
+                    "encryption"
+                } else {
+                    "decryption"
+                }
+            );
         }
     }
 
@@ -496,9 +507,15 @@ impl App {
             }
             KeyCode::Enter => {
                 if !self.input.is_empty() {
-                    if let AppMode::InputPassword { operation, files, compress } = self.mode.clone() {
+                    if let AppMode::InputPassword {
+                        operation,
+                        files,
+                        compress,
+                    } = self.mode.clone()
+                    {
                         let password = self.input.clone();
-                        self.process_files(operation, files, compress, password).await;
+                        self.process_files(operation, files, compress, password)
+                            .await;
                     }
                 }
             }
@@ -552,7 +569,13 @@ impl App {
     }
 
     /// Process selected files
-    async fn process_files(&mut self, operation: OperationType, files: Vec<PathBuf>, compress: bool, password: String) {
+    async fn process_files(
+        &mut self,
+        operation: OperationType,
+        files: Vec<PathBuf>,
+        compress: bool,
+        password: String,
+    ) {
         self.mode = AppMode::Processing {
             operation: operation.clone(),
             current_file: "Starting...".to_string(),
@@ -561,7 +584,8 @@ impl App {
 
         for (i, file_path) in files.iter().enumerate() {
             let progress = (i as f64) / (files.len() as f64) * 100.0;
-            let filename = file_path.file_name()
+            let filename = file_path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
@@ -578,16 +602,13 @@ impl App {
                 TargetType::File
             };
 
-            let params = OperationParams::new(
-                operation.clone(),
-                target_type,
-                file_path.clone(),
-            ).with_compression(compress)
-             .with_delete_source(self.settings.delete_after_operation)
-             .with_verify_checksum(self.settings.verify_checksums);
+            let params = OperationParams::new(operation.clone(), target_type, file_path.clone())
+                .with_compression(compress)
+                .with_delete_source(self.settings.delete_after_operation)
+                .with_verify_checksum(self.settings.verify_checksums);
 
             let result = self.file_operator.process(&params, &password).await;
-            
+
             if !result.success {
                 self.status = format!("Error: {}", result.error.unwrap_or_default());
                 self.mode = AppMode::Browser;
@@ -606,16 +627,22 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([
-                Constraint::Length(1), // Title
-                Constraint::Min(1),    // Main content
-                Constraint::Length(3), // Status
-            ].as_ref())
+            .constraints(
+                [
+                    Constraint::Length(1), // Title
+                    Constraint::Min(1),    // Main content
+                    Constraint::Length(3), // Status
+                ]
+                .as_ref(),
+            )
             .split(f.size());
 
         // Title
-        let title = Paragraph::new("SF-CLI - Secure File Encryption")
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+        let title = Paragraph::new("SF-CLI - Secure File Encryption").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
         f.render_widget(title, chunks[0]);
 
         // Main content based on mode
@@ -623,12 +650,14 @@ impl App {
             AppMode::Browser => self.draw_browser(f, chunks[1]),
             AppMode::Search => self.draw_search(f, chunks[1]),
             AppMode::Settings => self.draw_settings(f, chunks[1]),
-            AppMode::InputPassword { operation, files, .. } => {
-                self.draw_password_input(f, chunks[1], operation, files.len())
-            }
-            AppMode::Processing { operation, current_file, progress } => {
-                self.draw_processing(f, chunks[1], operation, current_file, *progress)
-            }
+            AppMode::InputPassword {
+                operation, files, ..
+            } => self.draw_password_input(f, chunks[1], operation, files.len()),
+            AppMode::Processing {
+                operation,
+                current_file,
+                progress,
+            } => self.draw_processing(f, chunks[1], operation, current_file, *progress),
             AppMode::Help => self.draw_help(f, chunks[1]),
             AppMode::Confirm { message, .. } => self.draw_confirm(f, chunks[1], message),
         }
@@ -647,8 +676,7 @@ impl App {
             &status_text,
             Style::default().fg(Color::Green),
         )]);
-        let status = Paragraph::new(status_line)
-            .block(Block::default().borders(Borders::ALL));
+        let status = Paragraph::new(status_line).block(Block::default().borders(Borders::ALL));
         f.render_widget(status, chunks[2]);
     }
 
@@ -697,16 +725,21 @@ impl App {
                     format!("{:.1} MB", file.size as f64 / (1024.0 * 1024.0))
                 };
 
-                ListItem::new(format!("{}{:<30} {:>10}", prefix, file.name, size_str))
-                    .style(style)
+                ListItem::new(format!("{}{:<30} {:>10}", prefix, file.name, size_str)).style(style)
             })
             .collect();
 
         let current_dir_display = self.current_dir.to_string_lossy();
         let file_list = List::new(items)
-            .block(Block::default()
-                .title(format!("Files: {} ({})", current_dir_display, filtered_files.len()))
-                .borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(format!(
+                        "Files: {} ({})",
+                        current_dir_display,
+                        filtered_files.len()
+                    ))
+                    .borders(Borders::ALL),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol(">> ");
 
@@ -726,10 +759,16 @@ impl App {
             Line::from("?       - Help"),
             Line::from("q       - Quit"),
             Line::from(""),
-            Line::from(Span::styled("Legend:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Legend:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
             Line::from("📂 Directory"),
             Line::from("📄 File"),
-            Line::from(Span::styled("🔒 Encrypted", Style::default().fg(Color::Yellow))),
+            Line::from(Span::styled(
+                "🔒 Encrypted",
+                Style::default().fg(Color::Yellow),
+            )),
         ];
 
         let info_panel = Paragraph::new(info_text)
@@ -751,14 +790,38 @@ impl App {
         let settings_text = vec![
             Line::from("Settings:"),
             Line::from(""),
-            Line::from(format!("1. Global Password: {}", 
-                if self.settings.use_global_password { "Enabled" } else { "Disabled" })),
-            Line::from(format!("2. Default Compression: {}", 
-                if self.settings.default_compression { "Enabled" } else { "Disabled" })),
-            Line::from(format!("3. Delete After Operation: {}", 
-                if self.settings.delete_after_operation { "Enabled" } else { "Disabled" })),
-            Line::from(format!("4. Verify Checksums: {}", 
-                if self.settings.verify_checksums { "Enabled" } else { "Disabled" })),
+            Line::from(format!(
+                "1. Global Password: {}",
+                if self.settings.use_global_password {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            )),
+            Line::from(format!(
+                "2. Default Compression: {}",
+                if self.settings.default_compression {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            )),
+            Line::from(format!(
+                "3. Delete After Operation: {}",
+                if self.settings.delete_after_operation {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            )),
+            Line::from(format!(
+                "4. Verify Checksums: {}",
+                if self.settings.verify_checksums {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            )),
             Line::from(""),
             Line::from("Press number to toggle, Esc to return"),
         ];
@@ -769,16 +832,31 @@ impl App {
     }
 
     /// Draw password input interface
-    fn draw_password_input(&self, f: &mut Frame, area: ratatui::layout::Rect, operation: &OperationType, file_count: usize) {
-        let password_text = format!("Enter password for {} {} file(s):", 
-                                   operation, file_count);
-        let password_input = Paragraph::new(password_text)
-            .block(Block::default().title("Password Input").borders(Borders::ALL));
+    fn draw_password_input(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        operation: &OperationType,
+        file_count: usize,
+    ) {
+        let password_text = format!("Enter password for {} {} file(s):", operation, file_count);
+        let password_input = Paragraph::new(password_text).block(
+            Block::default()
+                .title("Password Input")
+                .borders(Borders::ALL),
+        );
         f.render_widget(password_input, area);
     }
 
     /// Draw processing interface
-    fn draw_processing(&self, f: &mut Frame, area: ratatui::layout::Rect, operation: &OperationType, current_file: &str, progress: f64) {
+    fn draw_processing(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        operation: &OperationType,
+        current_file: &str,
+        progress: f64,
+    ) {
         let processing_text = vec![
             Line::from(format!("Operation: {}", operation)),
             Line::from(format!("Current File: {}", current_file)),
@@ -816,8 +894,8 @@ impl App {
             Line::from("Press Esc or q to return"),
         ];
 
-        let help_panel = Paragraph::new(help_text)
-            .block(Block::default().title("Help").borders(Borders::ALL));
+        let help_panel =
+            Paragraph::new(help_text).block(Block::default().title("Help").borders(Borders::ALL));
         f.render_widget(help_panel, area);
     }
 

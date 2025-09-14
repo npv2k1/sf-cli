@@ -165,7 +165,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut app = App::new();
             app.run().await?;
         }
-        Some(Commands::Encrypt { path, output, compress, password }) => {
+        Some(Commands::Encrypt {
+            path,
+            output,
+            compress,
+            password,
+        }) => {
             let password = get_password(password)?;
             let target_type = if path.is_dir() {
                 TargetType::Directory
@@ -173,11 +178,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 TargetType::File
             };
 
-            let mut params = OperationParams::new(
-                OperationType::Encrypt,
-                target_type,
-                path.clone(),
-            ).with_compression(compress);
+            let mut params =
+                OperationParams::new(OperationType::Encrypt, target_type, path.clone())
+                    .with_compression(compress);
 
             if let Some(output) = output {
                 params = params.with_destination(output);
@@ -193,10 +196,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::Decrypt { path, output, compress, password }) => {
+        Some(Commands::Decrypt {
+            path,
+            output,
+            compress,
+            password,
+        }) => {
             let password = get_password(password)?;
-            let target_type = if path.to_string_lossy().ends_with(".sf") 
-                || path.to_string_lossy().ends_with(".sf.gz") {
+            let target_type = if path.to_string_lossy().ends_with(".sf")
+                || path.to_string_lossy().ends_with(".sf.gz")
+            {
                 // Assume it was a directory if it has .sf extension
                 if path.to_string_lossy().contains("directory") {
                     TargetType::Directory
@@ -207,11 +216,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 TargetType::File
             };
 
-            let mut params = OperationParams::new(
-                OperationType::Decrypt,
-                target_type,
-                path.clone(),
-            ).with_compression(compress);
+            let mut params =
+                OperationParams::new(OperationType::Decrypt, target_type, path.clone())
+                    .with_compression(compress);
 
             if let Some(output) = output {
                 params = params.with_destination(output);
@@ -227,25 +234,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::WatchEncrypt { 
-            watch_dir, 
-            target_dir, 
-            password, 
-            delete_source, 
-            compress, 
+        Some(Commands::WatchEncrypt {
+            watch_dir,
+            target_dir,
+            password,
+            delete_source,
+            compress,
             extensions,
-            process_existing 
+            process_existing,
         }) => {
             let password = get_password(password)?;
-            
-            let mut config = WatchConfig::new(
-                watch_dir,
-                OperationType::Encrypt,
-                password,
-            )
-            .with_delete_source(delete_source)
-            .with_compression(compress)
-            .with_process_existing(process_existing);
+
+            let mut config = WatchConfig::new(watch_dir, OperationType::Encrypt, password)
+                .with_delete_source(delete_source)
+                .with_compression(compress)
+                .with_process_existing(process_existing);
 
             if let Some(target_dir) = target_dir {
                 config = config.with_target_dir(target_dir);
@@ -265,24 +268,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::WatchDecrypt { 
-            watch_dir, 
-            target_dir, 
-            password, 
-            delete_source, 
+        Some(Commands::WatchDecrypt {
+            watch_dir,
+            target_dir,
+            password,
+            delete_source,
             compress,
-            process_existing 
+            process_existing,
         }) => {
             let password = get_password(password)?;
-            
-            let mut config = WatchConfig::new(
-                watch_dir,
-                OperationType::Decrypt,
-                password,
-            )
-            .with_delete_source(delete_source)
-            .with_compression(compress)
-            .with_process_existing(process_existing);
+
+            let mut config = WatchConfig::new(watch_dir, OperationType::Decrypt, password)
+                .with_delete_source(delete_source)
+                .with_compression(compress)
+                .with_process_existing(process_existing);
 
             if let Some(target_dir) = target_dir {
                 config = config.with_target_dir(target_dir);
@@ -294,18 +293,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::HybridEncrypt { path, output, compress, public_key }) => {
+        Some(Commands::HybridEncrypt {
+            path,
+            output,
+            compress,
+            public_key,
+        }) => {
             let target_type = if path.is_dir() {
                 TargetType::Directory
             } else {
                 TargetType::File
             };
 
-            let mut params = OperationParams::new(
-                OperationType::HybridEncrypt,
-                target_type,
-                path.clone(),
-            ).with_compression(compress);
+            let mut params =
+                OperationParams::new(OperationType::HybridEncrypt, target_type, path.clone())
+                    .with_compression(compress);
 
             if let Some(output) = output {
                 params = params.with_destination(output);
@@ -325,7 +327,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::HybridDecrypt { path, output, compress, private_key }) => {
+        Some(Commands::HybridDecrypt {
+            path,
+            output,
+            compress,
+            private_key,
+        }) => {
             let target_type = if path.to_string_lossy().ends_with(".hsf") {
                 // Detect if it was a directory based on filename patterns
                 if path.to_string_lossy().contains("directory") {
@@ -337,11 +344,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 TargetType::File
             };
 
-            let mut params = OperationParams::new(
-                OperationType::HybridDecrypt,
-                target_type,
-                path.clone(),
-            ).with_compression(compress);
+            let mut params =
+                OperationParams::new(OperationType::HybridDecrypt, target_type, path.clone())
+                    .with_compression(compress);
 
             if let Some(output) = output {
                 params = params.with_destination(output);
@@ -361,10 +366,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::Keygen { algorithm, key_size, comment, output }) => {
+        Some(Commands::Keygen {
+            algorithm,
+            key_size,
+            comment,
+            output,
+        }) => {
             let ssh_discovery = SshKeyDiscovery::new();
             let key_algorithm = KeyAlgorithm::from(algorithm);
-            
+
             // Validate key size for RSA
             if let (KeyAlgorithm::Rsa, Some(size)) = (&key_algorithm, key_size) {
                 if size < 2048 {
@@ -372,15 +382,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
             }
-            
+
             match ssh_discovery.generate_key_pair(key_algorithm, key_size, comment, output) {
                 Ok((private_path, public_path)) => {
                     println!("✅ Key pair generated successfully!");
                     println!("🔐 Private key: {}", private_path.display());
                     println!("🔑 Public key:  {}", public_path.display());
                     println!("\n💡 You can now use these keys with hybrid encrypt/decrypt:");
-                    println!("   sf-cli hybrid-encrypt --public-key {} <file>", public_path.display());
-                    println!("   sf-cli hybrid-decrypt --private-key {} <encrypted_file>", private_path.display());
+                    println!(
+                        "   sf-cli hybrid-encrypt --public-key {} <file>",
+                        public_path.display()
+                    );
+                    println!(
+                        "   sf-cli hybrid-decrypt --private-key {} <encrypted_file>",
+                        private_path.display()
+                    );
                 }
                 Err(e) => {
                     eprintln!("Error generating key pair: {}", e);

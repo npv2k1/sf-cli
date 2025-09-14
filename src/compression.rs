@@ -47,7 +47,7 @@ impl CompressionEngine {
         encoder
             .write_all(data)
             .map_err(|e| CompressionError::CompressionFailed(e.to_string()))?;
-        
+
         encoder
             .finish()
             .map_err(|e| CompressionError::CompressionFailed(e.to_string()))
@@ -57,11 +57,11 @@ impl CompressionEngine {
     pub fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>, CompressionError> {
         let mut decoder = GzDecoder::new(compressed_data);
         let mut decompressed = Vec::new();
-        
+
         decoder
             .read_to_end(&mut decompressed)
             .map_err(|e| CompressionError::DecompressionFailed(e.to_string()))?;
-        
+
         Ok(decompressed)
     }
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn test_compression_levels() {
         let data = b"Test data for compression level testing. ".repeat(100);
-        
+
         let engine_fast = CompressionEngine::with_level(1);
         let engine_best = CompressionEngine::with_level(9);
 
@@ -104,7 +104,7 @@ mod tests {
         // Both should decompress to original data
         let decompressed_fast = engine_fast.decompress(&compressed_fast).unwrap();
         let decompressed_best = engine_best.decompress(&compressed_best).unwrap();
-        
+
         assert_eq!(decompressed_fast, data);
         assert_eq!(decompressed_best, data);
     }
@@ -116,7 +116,7 @@ mod tests {
 
         let compressed = engine.compress(empty_data).unwrap();
         let decompressed = engine.decompress(&compressed).unwrap();
-        
+
         assert_eq!(decompressed.as_slice(), empty_data);
     }
 
@@ -126,21 +126,24 @@ mod tests {
         let invalid_data = b"This is not compressed data";
 
         let result = engine.decompress(invalid_data);
-        assert!(matches!(result, Err(CompressionError::DecompressionFailed(_))));
+        assert!(matches!(
+            result,
+            Err(CompressionError::DecompressionFailed(_))
+        ));
     }
 
     #[test]
     fn test_compression_ratio() {
         let engine = CompressionEngine::new();
-        
+
         // Highly compressible data
         let repetitive_data = b"A".repeat(1000);
         let ratio1 = engine.estimate_ratio(&repetitive_data).unwrap();
-        
+
         // Less compressible data (random-like)
         let varied_data = (0..1000).map(|i| (i % 256) as u8).collect::<Vec<_>>();
         let ratio2 = engine.estimate_ratio(&varied_data).unwrap();
-        
+
         // Repetitive data should compress better (lower ratio)
         assert!(ratio1 < ratio2);
         assert!(ratio1 < 1.0);

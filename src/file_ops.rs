@@ -59,7 +59,7 @@ impl FileOperator {
     /// Process a file or directory based on operation parameters
     pub async fn process(&self, params: &OperationParams, password: &str) -> OperationResult {
         let source = &params.source;
-        
+
         // Validate source path
         if !source.exists() {
             return OperationResult::failure(
@@ -93,7 +93,10 @@ impl FileOperator {
 
         let result = match params.operation {
             OperationType::Encrypt => {
-                match self.encrypt_file(source, &destination, password, params).await {
+                match self
+                    .encrypt_file(source, &destination, password, params)
+                    .await
+                {
                     Ok(bytes_processed) => OperationResult::success(
                         source.clone(),
                         destination,
@@ -109,7 +112,10 @@ impl FileOperator {
                 }
             }
             OperationType::Decrypt => {
-                match self.decrypt_file(source, &destination, password, params).await {
+                match self
+                    .decrypt_file(source, &destination, password, params)
+                    .await
+                {
                     Ok((bytes_processed, metadata, checksum_verified)) => {
                         OperationResult::success_with_metadata(
                             source.clone(),
@@ -175,7 +181,10 @@ impl FileOperator {
         match params.operation {
             OperationType::Encrypt => {
                 // For directories, we always compress (tar.gz) before encrypting
-                match self.encrypt_directory(source, &destination, password, params).await {
+                match self
+                    .encrypt_directory(source, &destination, password, params)
+                    .await
+                {
                     Ok(bytes_processed) => OperationResult::success(
                         source.clone(),
                         destination,
@@ -191,7 +200,10 @@ impl FileOperator {
                 }
             }
             OperationType::Decrypt => {
-                match self.decrypt_directory(&source, &destination, password, params).await {
+                match self
+                    .decrypt_directory(&source, &destination, password, params)
+                    .await
+                {
                     Ok(bytes_processed) => OperationResult::success(
                         source.clone(),
                         destination,
@@ -211,7 +223,7 @@ impl FileOperator {
                 println!("📁 Hybrid Directory Encryption");
                 println!("==============================");
                 println!("🔑 This will compress the directory and encrypt with hybrid encryption");
-                
+
                 OperationResult::failure(
                     source.clone(),
                     params.operation.clone(),
@@ -222,7 +234,7 @@ impl FileOperator {
                 // Hybrid directory decryption
                 println!("📁 Hybrid Directory Decryption");
                 println!("==============================");
-                
+
                 OperationResult::failure(
                     source.clone(),
                     params.operation.clone(),
@@ -267,7 +279,7 @@ impl FileOperator {
         // Encrypt the data
         progress.as_ref().map(|p| p.set_message("Encrypting..."));
         let encrypted_data = self.crypto.encrypt(&data_to_encrypt, password, metadata)?;
-        
+
         // Write to destination
         let mut output = BufWriter::new(File::create(destination)?);
         output.write_all(&encrypted_data)?;
@@ -296,7 +308,7 @@ impl FileOperator {
         // Display helpful message about SSH keys and show discovered keys
         println!("🔑 Hybrid Encryption Mode");
         println!("=========================");
-        
+
         let file_size = fs::metadata(source)?.len();
         let progress = if params.show_progress {
             Some(ProgressTracker::new(file_size, "Hybrid Encrypting"))
@@ -322,16 +334,22 @@ impl FileOperator {
         let metadata = FileMetadata::from_file(source, &file_data, params.compress);
 
         // Encrypt the data using hybrid encryption
-        progress.as_ref().map(|p| p.set_message("Hybrid encrypting..."));
-        let encrypted_data = self.hybrid_crypto.encrypt(&data_to_encrypt, params.public_key_path.as_deref(), metadata)?;
-        
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Hybrid encrypting..."));
+        let encrypted_data = self.hybrid_crypto.encrypt(
+            &data_to_encrypt,
+            params.public_key_path.as_deref(),
+            metadata,
+        )?;
+
         // Create destination with .hsf extension
         let final_destination = if destination.extension().is_none() {
             destination.with_extension("hsf")
         } else {
             destination.to_path_buf()
         };
-        
+
         // Write to destination
         let mut output = BufWriter::new(File::create(&final_destination)?);
         output.write_all(&encrypted_data)?;
@@ -364,7 +382,7 @@ impl FileOperator {
         // Display helpful message about hybrid decryption
         println!("🔓 Hybrid Decryption Mode");
         println!("=========================");
-        
+
         let file_size = fs::metadata(source)?.len();
         let progress = if params.show_progress {
             Some(ProgressTracker::new(file_size, "Hybrid Decrypting"))
@@ -378,9 +396,13 @@ impl FileOperator {
         input.read_to_end(&mut encrypted_data)?;
 
         // Decrypt the data using hybrid decryption
-        progress.as_ref().map(|p| p.set_message("Hybrid decrypting..."));
-        let (decrypted_data, metadata) = self.hybrid_crypto.decrypt(&encrypted_data, params.private_key_path.as_deref())?;
-        
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Hybrid decrypting..."));
+        let (decrypted_data, metadata) = self
+            .hybrid_crypto
+            .decrypt(&encrypted_data, params.private_key_path.as_deref())?;
+
         // Apply decompression if the data was compressed
         let final_data = if metadata.compressed {
             progress.as_ref().map(|p| p.set_message("Decompressing..."));
@@ -395,7 +417,7 @@ impl FileOperator {
         } else {
             destination.to_path_buf()
         };
-        
+
         // Write to destination
         let mut output = BufWriter::new(File::create(&final_destination)?);
         output.write_all(&final_data)?;
@@ -435,10 +457,10 @@ impl FileOperator {
 
         let mut input = BufReader::new(File::open(source)?);
         let mut encrypted_data = Vec::new();
-        
+
         // Read the encrypted file
         input.read_to_end(&mut encrypted_data)?;
-        
+
         if let Some(progress) = &progress {
             progress.inc(file_size);
             progress.set_message("Decrypting...");
@@ -453,7 +475,7 @@ impl FileOperator {
                 (data, None)
             }
         };
-        
+
         // Decompress if needed
         let final_data = if let Some(ref meta) = metadata {
             if meta.compressed {
@@ -525,16 +547,20 @@ impl FileOperator {
         };
 
         // Create a tar.gz archive of the directory in memory
-        progress.as_ref().map(|p| p.set_message("Creating archive..."));
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Creating archive..."));
         let archive_data = self.create_directory_archive(source)?;
-        
+
         // Create metadata for directory
         let metadata = FileMetadata::from_file(source, &archive_data, true); // Always compressed for directories
-        
+
         // Encrypt the archive
-        progress.as_ref().map(|p| p.set_message("Encrypting archive..."));
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Encrypting archive..."));
         let encrypted_data = self.crypto.encrypt(&archive_data, password, metadata)?;
-        
+
         // Write encrypted data to destination
         let mut output = BufWriter::new(File::create(destination)?);
         output.write_all(&encrypted_data)?;
@@ -562,7 +588,9 @@ impl FileOperator {
         };
 
         // Read and decrypt the file
-        progress.as_ref().map(|p| p.set_message("Reading encrypted file..."));
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Reading encrypted file..."));
         let mut encrypted_data = Vec::new();
         let mut input = BufReader::new(File::open(source)?);
         input.read_to_end(&mut encrypted_data)?;
@@ -578,7 +606,9 @@ impl FileOperator {
         };
 
         // Extract the archive
-        progress.as_ref().map(|p| p.set_message("Extracting archive..."));
+        progress
+            .as_ref()
+            .map(|p| p.set_message("Extracting archive..."));
         self.extract_directory_archive(&archive_data, destination)?;
 
         if let Some(progress) = &progress {
@@ -600,17 +630,23 @@ impl FileOperator {
         tar.append_dir_all(".", source)
             .map_err(|e| FileOperationError::IoError(e))?;
 
-        let encoder = tar.into_inner()
+        let encoder = tar
+            .into_inner()
             .map_err(|e| FileOperationError::IoError(e))?;
-        
-        let archive_data = encoder.finish()
+
+        let archive_data = encoder
+            .finish()
             .map_err(|e| FileOperationError::IoError(e))?;
 
         Ok(archive_data)
     }
 
     /// Extract a tar.gz archive to a directory
-    fn extract_directory_archive(&self, archive_data: &[u8], destination: &Path) -> Result<(), FileOperationError> {
+    fn extract_directory_archive(
+        &self,
+        archive_data: &[u8],
+        destination: &Path,
+    ) -> Result<(), FileOperationError> {
         use flate2::read::GzDecoder;
 
         // Create destination directory
@@ -618,8 +654,9 @@ impl FileOperator {
 
         let decoder = GzDecoder::new(archive_data);
         let mut archive = tar::Archive::new(decoder);
-        
-        archive.unpack(destination)
+
+        archive
+            .unpack(destination)
             .map_err(|e| FileOperationError::IoError(e))?;
 
         Ok(())
@@ -629,8 +666,8 @@ impl FileOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_file_encryption_decryption() {
@@ -650,20 +687,19 @@ mod tests {
             OperationType::Encrypt,
             TargetType::File,
             source_file.clone(),
-        ).with_destination(encrypted_file.clone())
-         .with_progress(false);
+        )
+        .with_destination(encrypted_file.clone())
+        .with_progress(false);
 
         let result = operator.process(&encrypt_params, password).await;
         assert!(result.success, "Encryption failed: {:?}", result.error);
         assert!(encrypted_file.exists());
 
         // Decrypt
-        let decrypt_params = OperationParams::new(
-            OperationType::Decrypt,
-            TargetType::File,
-            encrypted_file,
-        ).with_destination(decrypted_file.clone())
-         .with_progress(false);
+        let decrypt_params =
+            OperationParams::new(OperationType::Decrypt, TargetType::File, encrypted_file)
+                .with_destination(decrypted_file.clone())
+                .with_progress(false);
 
         let result = operator.process(&decrypt_params, password).await;
         assert!(result.success, "Decryption failed: {:?}", result.error);
@@ -694,22 +730,21 @@ mod tests {
             OperationType::Encrypt,
             TargetType::File,
             source_file.clone(),
-        ).with_destination(encrypted_file.clone())
-         .with_compression(true)
-         .with_progress(false);
+        )
+        .with_destination(encrypted_file.clone())
+        .with_compression(true)
+        .with_progress(false);
 
         let result = operator.process(&encrypt_params, password).await;
         assert!(result.success);
         assert!(encrypted_file.exists());
 
         // Decrypt with compression
-        let decrypt_params = OperationParams::new(
-            OperationType::Decrypt,
-            TargetType::File,
-            encrypted_file,
-        ).with_destination(decrypted_file.clone())
-         .with_compression(true)
-         .with_progress(false);
+        let decrypt_params =
+            OperationParams::new(OperationType::Decrypt, TargetType::File, encrypted_file)
+                .with_destination(decrypted_file.clone())
+                .with_compression(true)
+                .with_progress(false);
 
         let result = operator.process(&decrypt_params, password).await;
         assert!(result.success);
@@ -732,22 +767,18 @@ mod tests {
         let operator = FileOperator::new();
 
         // Encrypt with one password
-        let encrypt_params = OperationParams::new(
-            OperationType::Encrypt,
-            TargetType::File,
-            source_file,
-        ).with_destination(encrypted_file.clone())
-         .with_progress(false);
+        let encrypt_params =
+            OperationParams::new(OperationType::Encrypt, TargetType::File, source_file)
+                .with_destination(encrypted_file.clone())
+                .with_progress(false);
 
         let result = operator.process(&encrypt_params, "correct_password").await;
         assert!(result.success);
 
         // Try to decrypt with wrong password
-        let decrypt_params = OperationParams::new(
-            OperationType::Decrypt,
-            TargetType::File,
-            encrypted_file,
-        ).with_progress(false);
+        let decrypt_params =
+            OperationParams::new(OperationType::Decrypt, TargetType::File, encrypted_file)
+                .with_progress(false);
 
         let result = operator.process(&decrypt_params, "wrong_password").await;
         assert!(!result.success);
