@@ -1,6 +1,6 @@
 [package]
 name = "sf-cli"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 authors = ["npv2k1"]
 description = "Secure file encryption CLI/TUI tool with password protection"
