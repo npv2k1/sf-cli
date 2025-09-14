@@ -282,6 +282,33 @@ cargo clippy -- -D warnings
 cargo fmt
 ```
 
+### Version Management
+
+SF-CLI includes an automated version management script for releasing new versions:
+
+```bash
+# Increment patch version (1.0.4 → 1.0.5)
+./scripts/version.sh patch
+
+# Increment minor version (1.0.4 → 1.1.0)  
+./scripts/version.sh minor
+
+# Increment major version (1.0.4 → 2.0.0)
+./scripts/version.sh major
+
+# Test without making changes
+./scripts/version.sh patch --dry-run
+```
+
+The script automatically:
+- Updates `Cargo.toml` version
+- Runs formatting, build, and tests
+- Commits changes with standardized message
+- Creates and pushes git tags
+- Triggers the release workflow
+
+See [`scripts/README.md`](scripts/README.md) for detailed usage and options.
+
 ## CI/CD
 
 This project uses GitHub Actions for continuous integration and deployment:

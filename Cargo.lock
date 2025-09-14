@@ -1327,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "sf-cli"
-version = "0.1.0"
+version = "1.0.4"
 dependencies = [
  "aes-gcm",
  "anyhow",
