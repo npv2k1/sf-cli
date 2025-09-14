@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
     branches:
       - main
 
@@ -32,99 +32,99 @@ jobs:
             asset_name: sf-cli-macos-x86_64
 
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
-    
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Build release binary
-      run: cargo build --release --target ${{ matrix.target }}
-    
-    - name: Upload release binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.asset_name }}
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
   release:
     name: Create Release
     needs: build-and-release
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-    
-    - name: Set release info
-      id: release_info
-      run: |
-        if [[ "${{ github.ref_type }}" == "tag" ]]; then
-          echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "release_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "prerelease=false" >> $GITHUB_OUTPUT
-        else
-          echo "tag_name=latest" >> $GITHUB_OUTPUT
-          echo "release_name=Latest Development Build" >> $GITHUB_OUTPUT
-          echo "prerelease=true" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Delete existing latest release if it exists
-      if: github.ref_type != 'tag'
-      run: |
-        gh release delete latest --yes || true
-        git tag -d latest || true
-        git push origin :refs/tags/latest || true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Make artifacts executable
-      run: |
-        chmod +x sf-cli-linux-x86_64/sf-cli || true
-        chmod +x sf-cli-macos-x86_64/sf-cli || true
-    
-    - name: Create Release with GitHub CLI
-      run: |
-        # Create release notes file
-        gh api repos/${{ github.repository }}/releases/generate-notes \
-          -F tag_name=${{ steps.release_info.outputs.tag_name }} \
-          --jq .body > RELEASE_NOTES.md
-        
-        # Create the release
-        if [[ "${{ github.ref_type }}" == "tag" ]]; then
-          gh release create ${{ steps.release_info.outputs.tag_name }} \
-            --title "${{ steps.release_info.outputs.release_name }}" \
-            --notes-file RELEASE_NOTES.md
-        else
-          # Create a tag for the latest release
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git tag -f latest
-          git push -f origin latest
-          
-          gh release create latest \
-            --title "${{ steps.release_info.outputs.release_name }}" \
-            --notes-file RELEASE_NOTES.md \
-            --prerelease
-        fi
-        
-        # Upload all artifacts
-        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-linux-x86_64/sf-cli --clobber
-        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-windows-x86_64.exe/sf-cli.exe --clobber
-        gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-macos-x86_64/sf-cli --clobber
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Set release info
+        id: release_info
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "release_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag_name=latest" >> $GITHUB_OUTPUT
+            echo "release_name=Latest Development Build" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Delete existing latest release if it exists
+        if: github.ref_type != 'tag'
+        run: |
+          gh release delete latest --yes || true
+          git tag -d latest || true
+          git push origin :refs/tags/latest || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Make artifacts executable
+        run: |
+          chmod +x sf-cli-linux-x86_64/sf-cli || true
+          chmod +x sf-cli-macos-x86_64/sf-cli || true
+
+      - name: Create Release with GitHub CLI
+        run: |
+          # Create release notes file
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            -F tag_name=${{ steps.release_info.outputs.tag_name }} \
+            --jq .body > RELEASE_NOTES.md
+
+          # Create the release
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            gh release create ${{ steps.release_info.outputs.tag_name }} \
+              --title "${{ steps.release_info.outputs.release_name }}" \
+              --notes-file RELEASE_NOTES.md
+          else
+            # Create a tag for the latest release
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git tag -f latest
+            git push -f origin latest
+            
+            gh release create latest \
+              --title "${{ steps.release_info.outputs.release_name }}" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease
+          fi
+
+          # Upload all artifacts
+          gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-linux-x86_64/sf-cli --clobber
+          gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-windows-x86_64.exe/sf-cli.exe --clobber
+          gh release upload ${{ steps.release_info.outputs.tag_name }} sf-cli-macos-x86_64/sf-cli --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-to-crates:
     name: Publish to Crates.io
@@ -132,21 +132,24 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Publish to Crates.io
-      run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-      env:
-        CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check diff
+        uses: git diff
+
+      - name: Publish to Crates.io
+        run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
