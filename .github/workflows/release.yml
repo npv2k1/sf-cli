@@ -147,7 +147,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check diff
-        uses: git diff
+        run: git diff
 
       - name: Publish to Crates.io
         run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
