@@ -640,13 +640,9 @@ impl FileOperator {
         tar.append_dir_all(".", source)
             .map_err(FileOperationError::IoError)?;
 
-        let encoder = tar
-            .into_inner()
-            .map_err(FileOperationError::IoError)?;
+        let encoder = tar.into_inner().map_err(FileOperationError::IoError)?;
 
-        let archive_data = encoder
-            .finish()
-            .map_err(FileOperationError::IoError)?;
+        let archive_data = encoder.finish().map_err(FileOperationError::IoError)?;
 
         Ok(archive_data)
     }

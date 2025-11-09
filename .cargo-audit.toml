@@ -1,0 +1,20 @@
+# Cargo audit configuration
+# See: https://github.com/RustSec/rustsec/tree/main/cargo-audit
+
+# Note: This configuration file is for documentation purposes.
+# The actual ignore list is specified in .github/workflows/security.yml
+# using the --ignore flag in the cargo audit command.
+
+# Known advisories that are acknowledged and documented in SECURITY.md:
+
+# RUSTSEC-2023-0071: RSA Marvin Attack (Medium Severity - CVSS 5.9)
+# - Status: No stable fix available (rsa 0.10 is still RC)
+# - Mitigation: Users should prefer ECDSA keys for hybrid encryption
+# - Will be resolved when rsa 0.10 reaches stable release
+# - Currently ignored in CI via: cargo audit --ignore RUSTSEC-2023-0071
+
+# RUSTSEC-2024-0436: paste crate unmaintained
+# - Status: Transitive dependency through ratatui, compile-time only
+# - Impact: Low - no runtime security implications
+# - Will be resolved by updating ratatui when newer stable versions are available
+# - This generates a warning but does not fail the audit

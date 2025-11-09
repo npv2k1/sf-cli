@@ -27,4 +27,4 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run audit
-      run: cargo audit
+      run: cargo audit --ignore RUSTSEC-2023-0071
