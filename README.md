@@ -347,6 +347,9 @@ This project uses GitHub Actions for continuous integration and deployment:
 - **Temp Files**: No temporary files created during encryption
 - **Memory**: Sensitive data is zeroized after use
 - **Verification**: Always verify decrypted data integrity
+- **Hybrid Encryption**: When using hybrid encryption, prefer ECDSA (P-256) keys over RSA keys for better security
+
+For known security advisories and mitigation strategies, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 

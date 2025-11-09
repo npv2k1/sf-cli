@@ -102,11 +102,13 @@ pub struct App {
     /// Selected file indices (for multi-select)
     selected_files: HashMap<usize, bool>,
     /// Current operation progress
+    #[allow(dead_code)]
     operation_progress: Option<f64>,
 }
 
 /// Confirmation action type
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum ConfirmAction {
     DeleteFiles,
     OverwriteFile,
@@ -137,6 +139,7 @@ enum AppMode {
     /// Help screen
     Help,
     /// Confirmation dialog
+    #[allow(dead_code)]
     Confirm {
         message: String,
         action: ConfirmAction,
@@ -691,8 +694,7 @@ impl App {
         let filtered_files = self.filter_files();
         let items: Vec<ListItem> = filtered_files
             .iter()
-            .enumerate()
-            .map(|(_display_idx, (original_idx, file))| {
+            .map(|(original_idx, file)| {
                 let prefix = if file.is_directory {
                     if file.name == ".." {
                         "📁 "

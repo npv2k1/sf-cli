@@ -298,7 +298,7 @@ impl SshKeyDiscovery {
             let path = entry.path();
 
             // Look for files without .pub extension (private keys)
-            if path.is_file() && !path.extension().map_or(false, |ext| ext == "pub") {
+            if path.is_file() && path.extension().is_none_or(|ext| ext != "pub") {
                 // Skip known non-key files
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
@@ -436,7 +436,7 @@ impl SshKeyDiscovery {
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
-                .map_err(|e| SshKeyError::IoError(e))?;
+                .map_err(SshKeyError::IoError)?;
 
             if let Ok(selection) = input.trim().parse::<usize>() {
                 if selection >= 1 && selection <= keys.len() {
@@ -480,7 +480,7 @@ impl SshKeyDiscovery {
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
-                .map_err(|e| SshKeyError::IoError(e))?;
+                .map_err(SshKeyError::IoError)?;
 
             if let Ok(selection) = input.trim().parse::<usize>() {
                 if selection >= 1 && selection <= keys.len() {
