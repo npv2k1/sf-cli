@@ -201,7 +201,7 @@ impl FileOperator {
             }
             OperationType::Decrypt => {
                 match self
-                    .decrypt_directory(&source, &destination, password, params)
+                    .decrypt_directory(source, &destination, password, params)
                     .await
                 {
                     Ok(bytes_processed) => OperationResult::success(
@@ -267,7 +267,9 @@ impl FileOperator {
 
         // Apply compression if requested
         let data_to_encrypt = if params.compress {
-            progress.as_ref().map(|p| p.set_message("Compressing..."));
+            if let Some(p) = progress.as_ref() {
+                p.set_message("Compressing...");
+            }
             self.compression.compress(&file_data)?
         } else {
             file_data.clone()
@@ -277,7 +279,9 @@ impl FileOperator {
         let metadata = FileMetadata::from_file(source, &file_data, params.compress);
 
         // Encrypt the data
-        progress.as_ref().map(|p| p.set_message("Encrypting..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Encrypting...");
+        }
         let encrypted_data = self.crypto.encrypt(&data_to_encrypt, password, metadata)?;
 
         // Write to destination
@@ -324,7 +328,9 @@ impl FileOperator {
 
         // Apply compression if requested
         let data_to_encrypt = if params.compress {
-            progress.as_ref().map(|p| p.set_message("Compressing..."));
+            if let Some(p) = progress.as_ref() {
+                p.set_message("Compressing...");
+            }
             self.compression.compress(&file_data)?
         } else {
             file_data.clone()
@@ -334,9 +340,9 @@ impl FileOperator {
         let metadata = FileMetadata::from_file(source, &file_data, params.compress);
 
         // Encrypt the data using hybrid encryption
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Hybrid encrypting..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Hybrid encrypting...");
+        }
         let encrypted_data = self.hybrid_crypto.encrypt(
             &data_to_encrypt,
             params.public_key_path.as_deref(),
@@ -396,16 +402,18 @@ impl FileOperator {
         input.read_to_end(&mut encrypted_data)?;
 
         // Decrypt the data using hybrid decryption
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Hybrid decrypting..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Hybrid decrypting...");
+        }
         let (decrypted_data, metadata) = self
             .hybrid_crypto
             .decrypt(&encrypted_data, params.private_key_path.as_deref())?;
 
         // Apply decompression if the data was compressed
         let final_data = if metadata.compressed {
-            progress.as_ref().map(|p| p.set_message("Decompressing..."));
+            if let Some(p) = progress.as_ref() {
+                p.set_message("Decompressing...");
+            }
             self.compression.decompress(&decrypted_data)?
         } else {
             decrypted_data
@@ -547,18 +555,18 @@ impl FileOperator {
         };
 
         // Create a tar.gz archive of the directory in memory
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Creating archive..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Creating archive...");
+        }
         let archive_data = self.create_directory_archive(source)?;
 
         // Create metadata for directory
         let metadata = FileMetadata::from_file(source, &archive_data, true); // Always compressed for directories
 
         // Encrypt the archive
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Encrypting archive..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Encrypting archive...");
+        }
         let encrypted_data = self.crypto.encrypt(&archive_data, password, metadata)?;
 
         // Write encrypted data to destination
@@ -588,14 +596,16 @@ impl FileOperator {
         };
 
         // Read and decrypt the file
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Reading encrypted file..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Reading encrypted file...");
+        }
         let mut encrypted_data = Vec::new();
         let mut input = BufReader::new(File::open(source)?);
         input.read_to_end(&mut encrypted_data)?;
 
-        progress.as_ref().map(|p| p.set_message("Decrypting..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Decrypting...");
+        }
         let (archive_data, _metadata) = match self.crypto.decrypt(&encrypted_data, password) {
             Ok((data, meta)) => (data, Some(meta)),
             Err(_) => {
@@ -606,9 +616,9 @@ impl FileOperator {
         };
 
         // Extract the archive
-        progress
-            .as_ref()
-            .map(|p| p.set_message("Extracting archive..."));
+        if let Some(p) = progress.as_ref() {
+            p.set_message("Extracting archive...");
+        }
         self.extract_directory_archive(&archive_data, destination)?;
 
         if let Some(progress) = &progress {
@@ -628,15 +638,15 @@ impl FileOperator {
 
         // Add the directory to the tar archive
         tar.append_dir_all(".", source)
-            .map_err(|e| FileOperationError::IoError(e))?;
+            .map_err(FileOperationError::IoError)?;
 
         let encoder = tar
             .into_inner()
-            .map_err(|e| FileOperationError::IoError(e))?;
+            .map_err(FileOperationError::IoError)?;
 
         let archive_data = encoder
             .finish()
-            .map_err(|e| FileOperationError::IoError(e))?;
+            .map_err(FileOperationError::IoError)?;
 
         Ok(archive_data)
     }
@@ -657,7 +667,7 @@ impl FileOperator {
 
         archive
             .unpack(destination)
-            .map_err(|e| FileOperationError::IoError(e))?;
+            .map_err(FileOperationError::IoError)?;
 
         Ok(())
     }

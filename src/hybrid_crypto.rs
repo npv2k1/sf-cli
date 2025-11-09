@@ -181,6 +181,7 @@ impl HybridHeader {
 
 /// Hybrid crypto engine for encryption/decryption operations
 pub struct HybridCryptoEngine {
+    #[allow(dead_code)]
     crypto: CryptoEngine,
     ssh_discovery: SshKeyDiscovery,
 }
@@ -234,7 +235,7 @@ impl HybridCryptoEngine {
         // - public exponent e (mpint)
         // - modulus n (mpint)
 
-        let parts: Vec<&str> = openssh_str.trim().split_whitespace().collect();
+        let parts: Vec<&str> = openssh_str.split_whitespace().collect();
         if parts.len() < 2 {
             return Err(HybridCryptoError::UnsupportedAlgorithm(
                 "Invalid SSH key format".to_string(),
@@ -314,13 +315,13 @@ impl HybridCryptoEngine {
         let n = rsa::BigUint::from_bytes_be(n_bytes);
 
         // Create RSA public key
-        let rsa_key = RsaPublicKey::new(n, e).map_err(|e| HybridCryptoError::RsaError(e))?;
+        let rsa_key = RsaPublicKey::new(n, e).map_err(HybridCryptoError::RsaError)?;
 
         // Encrypt session key using PKCS#1 v1.5 padding
         let mut rng = OsRng;
         let encrypted_key = rsa_key
             .encrypt(&mut rng, Pkcs1v15Encrypt, session_key)
-            .map_err(|e| HybridCryptoError::RsaError(e))?;
+            .map_err(HybridCryptoError::RsaError)?;
 
         Ok(encrypted_key)
     }
@@ -337,7 +338,7 @@ impl HybridCryptoEngine {
             .to_openssh()
             .map_err(|e| HybridCryptoError::SshKeyError(SshKeyError::SshKeyError(e)))?;
 
-        let parts: Vec<&str> = openssh_str.trim().split_whitespace().collect();
+        let parts: Vec<&str> = openssh_str.split_whitespace().collect();
         if parts.len() < 2 {
             return Err(HybridCryptoError::UnsupportedAlgorithm(
                 "Invalid SSH key format".to_string(),
@@ -617,12 +618,12 @@ impl HybridCryptoEngine {
 
                 // Create RSA private key
                 let rsa_private_key = RsaPrivateKey::from_components(n, e, d, primes)
-                    .map_err(|e| HybridCryptoError::RsaError(e))?;
+                    .map_err(HybridCryptoError::RsaError)?;
 
                 // Decrypt session key using PKCS#1 v1.5 padding
                 let decrypted_key = rsa_private_key
                     .decrypt(Pkcs1v15Encrypt, encrypted_session_key)
-                    .map_err(|e| HybridCryptoError::RsaError(e))?;
+                    .map_err(HybridCryptoError::RsaError)?;
 
                 if decrypted_key.len() != SESSION_KEY_SIZE {
                     return Err(HybridCryptoError::InvalidSessionKeyLength);
@@ -663,10 +664,10 @@ impl HybridCryptoEngine {
         match private_key.ssh_key.key_data() {
             ssh_key::private::KeypairData::Ecdsa(_ecdsa_keypair) => {
                 // For now, return an error until we can properly access the private key
-                return Err(HybridCryptoError::EcdsaError(
+                Err(HybridCryptoError::EcdsaError(
                     "ECDSA private key access needs to be implemented with correct field names"
                         .to_string(),
-                ));
+                ))
             }
             _ => Err(HybridCryptoError::UnsupportedAlgorithm(
                 "Expected ECDSA private key".to_string(),

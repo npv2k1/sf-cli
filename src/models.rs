@@ -163,18 +163,11 @@ impl OperationParams {
                             .unwrap_or("")
                             .to_string();
 
-                        if self.compress {
-                            if original_ext.is_empty() {
-                                self.source.with_extension("sf")
-                            } else {
-                                self.source.with_extension(format!("{}.sf", original_ext))
-                            }
+                        // Both branches are identical, so we can simplify
+                        if original_ext.is_empty() {
+                            self.source.with_extension("sf")
                         } else {
-                            if original_ext.is_empty() {
-                                self.source.with_extension("sf")
-                            } else {
-                                self.source.with_extension(format!("{}.sf", original_ext))
-                            }
+                            self.source.with_extension(format!("{}.sf", original_ext))
                         }
                     } else {
                         // Legacy behavior
